@@ -256,6 +256,15 @@ export class SDKLLMProvider implements LLMProvider {
               model = undefined;
             }
 
+            // Only pass model to CLI if explicitly configured via CTI_DEFAULT_MODEL.
+            // Letting the CLI choose its own default avoids exit-code-1 failures
+            // when a stored model is inaccessible on the current machine/plan.
+            const passModel = !!process.env.CTI_DEFAULT_MODEL;
+            if (model && !passModel) {
+              console.log(`[llm-provider] Skipping model "${model}", using CLI default (set CTI_DEFAULT_MODEL to override)`);
+              model = undefined;
+            }
+
             const queryOptions: Record<string, unknown> = {
               cwd: params.workingDirectory,
               model,
