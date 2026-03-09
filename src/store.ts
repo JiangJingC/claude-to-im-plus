@@ -450,6 +450,16 @@ export class JsonFileStore implements BridgeStore {
     return true;
   }
 
+  listPendingPermissionLinksByChat(chatId: string): PermissionLinkRecord[] {
+    const result: PermissionLinkRecord[] = [];
+    for (const link of this.permissionLinks.values()) {
+      if (link.chatId === chatId && !link.resolved) {
+        result.push(link);
+      }
+    }
+    return result;
+  }
+
   // ── Channel Offsets ──
 
   getChannelOffset(key: string): string {

@@ -207,6 +207,45 @@ describe('JsonFileStore', () => {
     assert.equal(store.markPermissionLinkResolved('unknown'), false);
   });
 
+  it('listPendingPermissionLinksByChat returns only unresolved links for the chat', () => {
+    const store = new JsonFileStore(makeSettings());
+    store.insertPermissionLink({
+      permissionRequestId: 'pr-a',
+      channelType: 'qq',
+      chatId: 'chat-1',
+      messageId: 'msg-a',
+      toolName: 'Bash',
+      suggestions: '',
+    });
+    store.insertPermissionLink({
+      permissionRequestId: 'pr-b',
+      channelType: 'qq',
+      chatId: 'chat-1',
+      messageId: 'msg-b',
+      toolName: 'Read',
+      suggestions: '',
+    });
+    store.insertPermissionLink({
+      permissionRequestId: 'pr-c',
+      channelType: 'qq',
+      chatId: 'chat-2',
+      messageId: 'msg-c',
+      toolName: 'Bash',
+      suggestions: '',
+    });
+    // Resolve one
+    store.markPermissionLinkResolved('pr-a');
+    const pending = store.listPendingPermissionLinksByChat('chat-1');
+    assert.equal(pending.length, 1);
+    assert.equal(pending[0].permissionRequestId, 'pr-b');
+    // Different chat
+    const pending2 = store.listPendingPermissionLinksByChat('chat-2');
+    assert.equal(pending2.length, 1);
+    assert.equal(pending2[0].permissionRequestId, 'pr-c');
+    // No permissions for unknown chat
+    assert.equal(store.listPendingPermissionLinksByChat('chat-unknown').length, 0);
+  });
+
   // ── Dedup ──
 
   it('dedup insert and check within window', () => {
