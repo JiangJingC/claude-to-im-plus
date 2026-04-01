@@ -36,6 +36,8 @@ Claude Code / Codex → 读写你的代码库
 - **Claude Code CLI**（`CTI_RUNTIME=claude` 或 `auto` 时需要）— 已安装并完成认证（`claude` 命令可用）
 - **Codex CLI**（`CTI_RUNTIME=codex` 或 `auto` 时需要）— `npm install -g @openai/codex`。鉴权：运行 `codex auth login`，或设置 `OPENAI_API_KEY`（可选，API 模式）
 
+如果你希望 IM 桥接后的 Codex 会话在 handoff 之后仍然保持完整文件写权限，请在 `~/.claude-to-im/config.env` 中设置 `CTI_CODEX_SANDBOX_MODE=danger-full-access`，然后重启 bridge。
+
 ## 安装
 
 请先按你实际使用的 AI Agent 产品选择对应安装方式。
@@ -230,8 +232,79 @@ start bridge
 | `/claude-to-im status` | "bridge status" / "状态" | 查看运行状态 |
 | `/claude-to-im logs` | "查看日志" | 查看最近 50 行日志 |
 | `/claude-to-im logs 200` | "logs 200" | 查看最近 200 行日志 |
+| `/claude-to-im handoff projects` | "handoff projects" | 列出已配置的项目目录 |
+| `/claude-to-im handoff threads skill` | "handoff threads skill" | 列出某个项目下最近的 Codex thread |
+| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | 把当前 `CODEX_THREAD_ID` 接到微信继续 |
+| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | 把指定 thread 接到指定微信聊天 |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | 交互式修改配置 |
 | `/claude-to-im doctor` | "doctor" / "诊断" | 诊断问题 |
+
+## 切到微信继续聊
+
+`handoff` 解决的是“我离开电脑后，想从微信继续当前 Codex 会话”这个场景。它会把某个微信聊天重新绑定到指定的 Codex thread，让下一条微信消息直接续上那条上下文。
+
+### 1. 配置项目目录
+
+创建 `~/.claude-to-im/projects.json`：
+
+```json
+{
+  "projects": [
+    {
+      "id": "skill",
+      "name": "Claude-to-IM Skill",
+      "cwd": "/absolute/path/to/project"
+    }
+  ]
+}
+```
+
+规则：
+
+- `id` 是你在 `handoff threads <project-id>` 里使用的短别名
+- `cwd` 必须是绝对路径
+- 匹配前会做路径规范化，但仍然是严格相等匹配，`/repo` 不会匹配 `/repo/subdir`
+
+### 2. 先列项目，再列 thread
+
+在 Claude Code 或 Codex 中执行：
+
+```text
+/claude-to-im handoff projects
+/claude-to-im handoff threads skill
+```
+
+helper 会读取本地 Codex 历史 `~/.codex/session_index.jsonl` 和 `~/.codex/sessions/**/*.jsonl`，然后列出 `session_meta.cwd` 与项目 `cwd` 严格匹配的最近 thread。
+
+### 3. 接到微信
+
+当前桌面会话的快速路径：
+
+```text
+/claude-to-im handoff weixin
+```
+
+显式指定 thread id：
+
+```text
+/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0
+```
+
+如果你已经有多个微信聊天 binding，就把 helper 输出里的 binding id 前缀一起带上：
+
+```text
+/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0 3fe039c5
+```
+
+补充说明：
+
+- 不传 thread id 时，`handoff weixin` 默认读取当前环境里的 `CODEX_THREAD_ID`
+- 只有一个微信 binding 时会自动选中
+- 如果还没有微信 binding，先让目标微信聊天给 bot 发过至少一条消息
+- handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
+- 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
+- 重启 bridge 会丢掉当前待处理的权限请求
+- handoff 只影响后续微信消息，不会把“当前正在生成中的这一轮回复”迁过去
 
 ## 平台配置指南
 
@@ -294,6 +367,7 @@ start bridge
 
 ```
 ~/.claude-to-im/
+├── projects.json          ← handoff 使用的项目别名配置（可选）
 ├── config.env             ← 凭据与配置 (chmod 600)
 ├── data/                  ← 持久化 JSON 存储
 │   ├── sessions.json
@@ -320,6 +394,8 @@ start bridge
 | `src/permission-gateway.ts` | 异步桥接：SDK `canUseTool` ↔ IM 按钮 |
 | `src/logger.ts` | 密钥脱敏的文件日志，支持轮转 |
 | `scripts/daemon.sh` | 进程管理（start/stop/status/logs） |
+| `scripts/handoff.sh` | handoff 包装脚本：stop → 改绑定 → restart → status |
+| `scripts/codex-handoff.mjs` | 纯 Node helper：项目配置、thread 列表、binding 更新 |
 | `scripts/doctor.sh` | 诊断检查 |
 | `SKILL.md` | Claude Code Skill 定义文件 |
 

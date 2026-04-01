@@ -5,11 +5,11 @@ description: |
   user can chat with Claude from their phone. Use for: setting up, starting, stopping,
   or diagnosing the claude-to-im bridge daemon; forwarding Claude replies to a messaging
   app; any phrase like "claude-to-im", "bridge", "消息推送", "消息转发", "桥接",
-  "连上飞书", "手机上看claude", "启动后台服务", "诊断", "查看日志", "配置".
-  Subcommands: setup, start, stop, status, logs, reconfigure, doctor.
+  "连上飞书", "手机上看claude", "启动后台服务", "诊断", "查看日志", "配置", "切到微信继续聊".
+  Subcommands: setup, start, stop, status, logs, handoff, reconfigure, doctor.
   Do NOT use for: building standalone bots, webhook integrations, or coding with IM
   platform SDKs — those are regular programming tasks.
-argument-hint: "setup | start | stop | status | logs [N] | reconfigure | doctor"
+argument-hint: "setup | start | stop | status | logs [N] | handoff projects | handoff threads <project-id> [limit] | handoff weixin [thread-id] [binding-id-prefix] | reconfigure | doctor"
 allowed-tools:
   - Bash
   - Read
@@ -40,12 +40,13 @@ Parse the user's intent from `$ARGUMENTS` into one of these subcommands:
 | `stop`, `stop bridge`, `停止`, `停止桥接` | stop |
 | `status`, `bridge status`, `状态`, `运行状态`, `怎么看桥接的运行状态` | status |
 | `logs`, `logs 200`, `查看日志`, `查看日志 200` | logs |
+| `handoff projects`, `handoff threads skill`, `handoff weixin`, `handoff weixin <thread-id>`, `把当前会话切到微信`, `列出某个项目下的 Codex 会话` | handoff |
 | `reconfigure`, `修改配置`, `帮我改一下 token`, `换个 bot` | reconfigure |
 | `doctor`, `diagnose`, `诊断`, `挂了`, `没反应了`, `bot 没反应`, `出问题了` | doctor |
 
 **Disambiguation: `status` vs `doctor`** — Use `status` when the user just wants to check if the bridge is running (informational). Use `doctor` when the user reports a problem or suspects something is broken (diagnostic). When in doubt and the user describes a symptom (e.g., "没反应了", "挂了"), prefer `doctor`.
 
-Extract optional numeric argument for `logs` (default 50).
+Extract optional numeric argument for `logs` (default 50). For `handoff threads`, extract optional numeric `limit` (default 20).
 
 Before asking users for any platform credentials, read `SKILL_DIR/references/setup-guides.md` internally so you know where to find each credential. Do NOT dump the full guide to the user upfront — only mention the specific next step they need to do (e.g., "Go to https://open.feishu.cn → your app → Credentials to find the App ID"). If the user says they don't know how, then show the relevant section of the guide.
 
@@ -156,6 +157,50 @@ Run: `bash "SKILL_DIR/scripts/daemon.sh" status`
 
 Extract optional line count N from arguments (default 50).
 Run: `bash "SKILL_DIR/scripts/daemon.sh" logs N`
+
+### `handoff`
+
+Use this to list configured project directories, inspect recent Codex threads under one project, or rebind a Weixin chat so future messages continue on a selected Codex thread.
+
+Supported forms:
+
+- `handoff projects`
+- `handoff threads <project-id> [limit]`
+- `handoff weixin`
+- `handoff weixin <thread-id>`
+- `handoff weixin <thread-id> <binding-id-prefix>`
+
+Interpretation rules:
+
+- `handoff projects` lists entries from `~/.claude-to-im/projects.json`
+- `handoff threads <project-id> [limit]` lists local Codex threads whose normalized `cwd` exactly matches the configured project `cwd`
+- `handoff weixin` uses the current `CODEX_THREAD_ID`
+- `handoff weixin <thread-id>` uses the explicit thread id
+- `handoff weixin <thread-id> <binding-id-prefix>` uses the explicit thread id and selects the target Weixin binding by binding id prefix when multiple chats exist
+
+Run these commands:
+
+- Projects list:
+  - `node "SKILL_DIR/scripts/codex-handoff.mjs" projects`
+- Thread list:
+  - `node "SKILL_DIR/scripts/codex-handoff.mjs" threads "<project-id>" "<limit>"`
+- Weixin handoff:
+  - `bash "SKILL_DIR/scripts/handoff.sh" weixin`
+  - `bash "SKILL_DIR/scripts/handoff.sh" weixin "<thread-id>"`
+  - `bash "SKILL_DIR/scripts/handoff.sh" weixin "<thread-id>" "<binding-id-prefix>"`
+
+Key behavior to explain to the user:
+
+- `~/.claude-to-im/projects.json` must exist for `handoff projects` / `handoff threads`; if missing, show the example emitted by the helper and stop
+- when exactly one Weixin binding exists, it is auto-selected
+- when multiple Weixin bindings exist, do not guess; show the helper output and ask the user to retry with a binding id prefix
+- if no Weixin binding exists yet, tell the user to send at least one message from the target Weixin chat first so the bridge can create the binding
+- the helper creates a brand-new bridge session and points the selected binding to the target Codex thread; it does not delete old sessions or message history
+- the helper clears the binding/session model pin by default to avoid resume failures caused by model mismatch
+- the helper resolves the working directory from local Codex session metadata when available; otherwise it falls back to the current shell `pwd`
+- `scripts/handoff.sh` restarts the bridge only if it was already running, because bindings are loaded on startup
+- restarting the bridge drops any pending permission requests; call this out explicitly
+- handoff only affects future messages from Weixin; it does not migrate the reply that is already in progress
 
 ### `reconfigure`
 

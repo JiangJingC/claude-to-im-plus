@@ -59,6 +59,13 @@ fi
 echo "Pruning dev dependencies..."
 (cd "$TARGET_DIR" && npm prune --production)
 
+# `cp -R` can make copied source files appear newer than the prebuilt bundle,
+# which triggers an unnecessary rebuild at runtime inside the installed skill.
+# Mark the shipped bundle as fresh so `daemon.sh start` uses it directly.
+if [ -f "$TARGET_DIR/dist/daemon.mjs" ]; then
+  touch "$TARGET_DIR/dist/daemon.mjs"
+fi
+
 echo ""
 echo "Done! Start a new Codex session and use:"
 echo "  claude-to-im setup    — configure IM platform credentials"

@@ -35,6 +35,12 @@ type CodexInstance = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ThreadInstance = any;
 
+const VALID_SANDBOX_MODES = new Set([
+  'read-only',
+  'workspace-write',
+  'danger-full-access',
+]);
+
 /**
  * Map bridge permission modes to Codex approval policies.
  * - 'acceptEdits' (code mode) → 'on-failure' (auto-approve most things)
@@ -58,6 +64,21 @@ function shouldPassModelToCodex(): boolean {
 /** Allow Codex to run outside a trusted Git repository when explicitly enabled. */
 function shouldSkipGitRepoCheck(): boolean {
   return process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK === 'true';
+}
+
+function resolveSandboxMode(): string | undefined {
+  const raw = process.env.CTI_CODEX_SANDBOX_MODE?.trim();
+  if (!raw) {
+    return undefined;
+  }
+  if (VALID_SANDBOX_MODES.has(raw)) {
+    return raw;
+  }
+  console.warn(
+    `[CodexProvider] Ignoring invalid CTI_CODEX_SANDBOX_MODE="${raw}". ` +
+    'Expected one of: read-only, workspace-write, danger-full-access.',
+  );
+  return undefined;
 }
 
 function shouldRetryFreshThread(message: string): boolean {
@@ -127,9 +148,11 @@ export class CodexProvider implements LLMProvider {
 
             const approvalPolicy = toApprovalPolicy(params.permissionMode);
             const passModel = shouldPassModelToCodex();
+            const sandboxMode = resolveSandboxMode();
 
             const threadOptions: Record<string, unknown> = {
               ...(passModel && params.model ? { model: params.model } : {}),
+              ...(sandboxMode ? { sandboxMode } : {}),
               ...(params.workingDirectory ? { workingDirectory: params.workingDirectory } : {}),
               ...(shouldSkipGitRepoCheck() ? { skipGitRepoCheck: true } : {}),
               approvalPolicy,

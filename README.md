@@ -36,6 +36,8 @@ Claude Code / Codex → reads/writes your codebase
 - **Claude Code CLI** (for `CTI_RUNTIME=claude` or `auto`) — installed and authenticated (`claude` command available)
 - **Codex CLI** (for `CTI_RUNTIME=codex` or `auto`) — `npm install -g @openai/codex`. Auth: run `codex auth login`, or set `OPENAI_API_KEY` (optional, for API mode)
 
+If your IM-bridged Codex sessions must keep full filesystem write access after handoff, set `CTI_CODEX_SANDBOX_MODE=danger-full-access` in `~/.claude-to-im/config.env` and restart the bridge.
+
 ## Installation
 
 Choose the section that matches the AI agent product you actually use.
@@ -230,8 +232,79 @@ All commands are run inside Claude Code or Codex:
 | `/claude-to-im status` | "bridge status" / "状态" | Show daemon status |
 | `/claude-to-im logs` | "查看日志" | Show last 50 log lines |
 | `/claude-to-im logs 200` | "logs 200" | Show last 200 log lines |
+| `/claude-to-im handoff projects` | "handoff projects" | List configured project directories |
+| `/claude-to-im handoff threads skill` | "handoff threads skill" | List recent Codex threads under one project |
+| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | Handoff the current `CODEX_THREAD_ID` to Weixin |
+| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | Handoff an explicit thread to a specific Weixin chat |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | Update config interactively |
 | `/claude-to-im doctor` | "doctor" / "诊断" | Diagnose issues |
+
+## Handoff to Weixin
+
+`handoff` is for the "continue this Codex conversation from WeChat after I leave my desk" workflow. It rebinds a Weixin chat to a Codex thread so the next message sent from Weixin resumes that thread.
+
+### 1. Configure project directories
+
+Create `~/.claude-to-im/projects.json`:
+
+```json
+{
+  "projects": [
+    {
+      "id": "skill",
+      "name": "Claude-to-IM Skill",
+      "cwd": "/absolute/path/to/project"
+    }
+  ]
+}
+```
+
+Rules:
+
+- `id` is the short alias you use in `handoff threads <project-id>`
+- `cwd` must be absolute
+- matching is strict after normalization, so `/repo` matches `/repo` but not `/repo/subdir`
+
+### 2. Inspect projects and threads
+
+Inside Claude Code or Codex:
+
+```text
+/claude-to-im handoff projects
+/claude-to-im handoff threads skill
+```
+
+The helper reads local Codex history from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/*.jsonl`, then shows recent threads whose `session_meta.cwd` exactly matches the configured project `cwd`.
+
+### 3. Handoff to Weixin
+
+Fast path for the current desktop session:
+
+```text
+/claude-to-im handoff weixin
+```
+
+Explicit thread id:
+
+```text
+/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0
+```
+
+If you have multiple Weixin chats bound already, add the binding id prefix shown by the helper:
+
+```text
+/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0 3fe039c5
+```
+
+Notes:
+
+- if you omit the thread id, `handoff weixin` uses the current `CODEX_THREAD_ID`
+- if exactly one Weixin binding exists, it is selected automatically
+- if no Weixin binding exists yet, send one message from the target Weixin chat first so the bridge can create the binding
+- handoff creates a new local bridge session and keeps old sessions/message files for auditability
+- the bridge restarts only when it was already running, because bindings are loaded at startup
+- restarting the bridge drops any pending permission requests
+- handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
 
 ## Platform Setup Guides
 
@@ -294,6 +367,7 @@ Additional notes:
 
 ```
 ~/.claude-to-im/
+├── projects.json          ← Optional project aliases for handoff
 ├── config.env             ← Credentials & settings (chmod 600)
 ├── data/                  ← Persistent JSON storage
 │   ├── sessions.json
@@ -320,6 +394,8 @@ Additional notes:
 | `src/permission-gateway.ts` | Async bridge: SDK `canUseTool` ↔ IM buttons |
 | `src/logger.ts` | Secret-redacted file logging with rotation |
 | `scripts/daemon.sh` | Process management (start/stop/status/logs) |
+| `scripts/handoff.sh` | Handoff wrapper: stop → rebind → restart → status |
+| `scripts/codex-handoff.mjs` | Pure Node helper for projects, thread listing, and binding updates |
 | `scripts/doctor.sh` | Health checks |
 | `SKILL.md` | Claude Code skill definition |
 
