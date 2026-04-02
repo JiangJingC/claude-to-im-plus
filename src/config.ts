@@ -40,6 +40,8 @@ export interface Config {
 export const CTI_HOME = process.env.CTI_HOME || path.join(os.homedir(), ".claude-to-im");
 export const CONFIG_PATH = path.join(CTI_HOME, "config.env");
 
+const NON_CLAUDE_MODEL_RE = /^(gpt-|o[1-9][-_]|codex[-_]|davinci|text-|openai\/)/i;
+
 function parseEnvFile(content: string): Map<string, string> {
   const entries = new Map<string, string>();
   for (const line of content.split("\n")) {
@@ -197,6 +199,20 @@ export function maskSecret(value: string): string {
   return "*".repeat(value.length - 4) + value.slice(-4);
 }
 
+function shouldExportDefaultModel(config: Config): boolean {
+  const model = config.defaultModel;
+  if (!model) return false;
+
+  // Avoid leaking an obviously Codex/OpenAI model into Claude runtime, where it
+  // only causes noisy warnings and is ignored anyway. Codex runtime keeps the
+  // explicit model as-is.
+  if ((config.runtime === "claude" || config.runtime === "auto") && NON_CLAUDE_MODEL_RE.test(model)) {
+    return false;
+  }
+
+  return true;
+}
+
 export function configToSettings(config: Config): Map<string, string> {
   const m = new Map<string, string>();
   m.set("remote_bridge_enabled", "true");
@@ -283,7 +299,7 @@ export function configToSettings(config: Config): Map<string, string> {
   // ── Defaults ──
   // Upstream keys: bridge_default_work_dir, bridge_default_model, default_model
   m.set("bridge_default_work_dir", config.defaultWorkDir);
-  if (config.defaultModel) {
+  if (shouldExportDefaultModel(config)) {
     m.set("bridge_default_model", config.defaultModel);
     m.set("default_model", config.defaultModel);
   }

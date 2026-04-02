@@ -159,10 +159,22 @@ describe('configToSettings', () => {
     assert.equal(m.get('bridge_default_mode'), 'code');
   });
 
-  it('maps model when explicitly set', () => {
-    const m = configToSettings({ ...base, defaultModel: 'gpt-4o' });
-    assert.equal(m.get('bridge_default_model'), 'gpt-4o');
-    assert.equal(m.get('default_model'), 'gpt-4o');
+  it('maps a Claude model when explicitly set in claude runtime', () => {
+    const m = configToSettings({ ...base, defaultModel: 'claude-sonnet-4-6' });
+    assert.equal(m.get('bridge_default_model'), 'claude-sonnet-4-6');
+    assert.equal(m.get('default_model'), 'claude-sonnet-4-6');
+  });
+
+  it('omits a non-Claude default model in claude runtime', () => {
+    const m = configToSettings({ ...base, defaultModel: 'gpt-5.4' });
+    assert.equal(m.has('bridge_default_model'), false);
+    assert.equal(m.has('default_model'), false);
+  });
+
+  it('keeps an explicit default model in codex runtime', () => {
+    const m = configToSettings({ ...base, runtime: 'codex', defaultModel: 'gpt-5.4' });
+    assert.equal(m.get('bridge_default_model'), 'gpt-5.4');
+    assert.equal(m.get('default_model'), 'gpt-5.4');
   });
 
   it('maps non-default mode', () => {

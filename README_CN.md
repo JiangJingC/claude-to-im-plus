@@ -283,7 +283,12 @@ claude-to-im handoff weixin
 | sandbox 标志 | 不传递 |
 | 额外允许目录（`--add-dir`） | 不传递 |
 
-实际影响：如果原始会话开启了 `bypassPermissions` 或自定义了 `allowedTools`，桥接侧**不会**继承。resumed 会话会走桥接的权限审批流程（微信 `/perm` 命令或 `1/2/3` 快捷回复）。
+实际影响：如果原始会话开启了 `bypassPermissions` 或自定义了 `allowedTools`，桥接侧**不会**继承。resumed 会话会走桥接自己的权限模型。
+
+运行时相关补充：
+- `CTI_AUTO_APPROVE=true` 表示桥接自动放行工具请求，但它仍然不等于继承 `--dangerously-skip-permissions`
+- `CTI_CODEX_SANDBOX_MODE` 只对 Codex runtime 生效
+- 如果 `CTI_RUNTIME=claude`，建议把 `CTI_DEFAULT_MODEL` 留空，或改成 Claude 模型名；Codex/OpenAI 模型名会被忽略
 
 **请勿对用户暗示”已完全继承桌面端权限”。**
 

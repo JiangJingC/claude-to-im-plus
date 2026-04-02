@@ -288,6 +288,11 @@ What is **NOT** propagated:
 
 The resumed session uses only what the bridge's own `config.env` provides: `CTI_DEFAULT_MODE`, `CTI_ENV_ISOLATION`, `CTI_AUTO_APPROVE`, etc.
 
+Runtime-specific config notes:
+- `CTI_AUTO_APPROVE=true` auto-allows bridge tool permission requests, but it is still not the same as inheriting `--dangerously-skip-permissions`
+- `CTI_CODEX_SANDBOX_MODE` only affects Codex runtime
+- If `CTI_RUNTIME=claude`, leave `CTI_DEFAULT_MODEL` unset or use a Claude model; Codex/OpenAI model names are ignored
+
 **Practical impact:** If your original session had `bypassPermissions` or a custom `allowedTools` list, the bridge session will NOT. It will use the bridge's standard permission model (including the IM `/perm` approval flow). Do not assume "fully inherits desktop permissions".
 
 ## Platform Setup Guides
