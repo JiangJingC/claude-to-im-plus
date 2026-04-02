@@ -355,6 +355,21 @@ export class JsonFileStore implements BridgeStore {
     this.persistBindings();
   }
 
+  // ── Leaf UUID tracking (DAG fork prevention) ──
+
+  getLeafUuid(sessionId: string): string | undefined {
+    const s = this.sessions.get(sessionId);
+    return (s as unknown as Record<string, unknown>)?.['leaf_uuid'] as string | undefined;
+  }
+
+  updateLeafUuid(sessionId: string, leafUuid: string): void {
+    const s = this.sessions.get(sessionId);
+    if (s) {
+      (s as unknown as Record<string, unknown>)['leaf_uuid'] = leafUuid;
+      this.persistSessions();
+    }
+  }
+
   updateSessionModel(sessionId: string, model: string): void {
     const s = this.sessions.get(sessionId);
     if (s) {

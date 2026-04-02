@@ -7,7 +7,7 @@
 
 import fs from 'node:fs';
 import { execSync } from 'node:child_process';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { LLMProvider, StreamChatParams, FileAttachment } from 'claude-to-im/src/lib/bridge/host.js';
 import type { PendingPermissions } from './permission-gateway.js';
@@ -461,10 +461,28 @@ export class SDKLLMProvider implements LLMProvider {
               model = undefined;
             }
 
+            // Resolve the leaf UUID for resumeSessionAt to prevent DAG forks.
+            // Warm path: use the stored leafUuid from the previous turn (zero latency).
+            // Cold start: call getSessionMessages() to find the current chain leaf.
+            let resolvedLeafUuid: string | undefined = params.leafUuid;
+            if (!resolvedLeafUuid && params.sdkSessionId) {
+              try {
+                const msgs = await getSessionMessages(params.sdkSessionId, {
+                  dir: params.workingDirectory,
+                });
+                // Last assistant message in the rebuilt chain = current leaf
+                const lastAssistant = [...msgs].reverse().find(m => m.type === 'assistant');
+                resolvedLeafUuid = lastAssistant?.uuid;
+              } catch (err) {
+                console.warn('[llm-provider] getSessionMessages failed, skipping resumeSessionAt:', err);
+              }
+            }
+
             const queryOptions: Record<string, unknown> = {
               cwd: params.workingDirectory,
               model,
               resume: params.sdkSessionId || undefined,
+              ...(resolvedLeafUuid ? { resumeSessionAt: resolvedLeafUuid } : {}),
               abortController: params.abortController,
               permissionMode: (params.permissionMode as 'default' | 'acceptEdits' | 'plan') || undefined,
               includePartialMessages: true,
@@ -636,6 +654,14 @@ export function handleMessage(
       // The captured text is used by the catch block to surface business
       // errors (e.g. "Your organization does not have access") that the
       // CLI returned as assistant text without prior streaming deltas.
+      //
+      // Also emit a leaf_uuid event with this message's UUID so the
+      // conversation engine can persist it for use as resumeSessionAt on
+      // the next call, preventing DAG forks between cli and sdk-ts entrypoints.
+      const assistantUuid = (msg as unknown as Record<string, unknown>)['uuid'] as string | undefined;
+      if (assistantUuid) {
+        controller.enqueue(sseEvent('leaf_uuid', assistantUuid));
+      }
       if (msg.message?.content) {
         for (const block of msg.message.content) {
           if (block.type === 'text' && block.text) {
