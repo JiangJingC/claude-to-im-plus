@@ -40,6 +40,19 @@ describe('claude-handoff helper', () => {
     });
   }
 
+  function runScriptPath(scriptPath: string, args: string[], extraEnv: Record<string, string> = {}) {
+    return spawnSync('node', [scriptPath, ...args], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CTI_HOME: ctiHome,
+        CLAUDE_HOME: claudeHome,
+        ...extraEnv,
+      },
+    });
+  }
+
   function seedProjects(projects: Array<{ id: string; name: string; cwd: string }>): void {
     writeJson(path.join(ctiHome, 'projects.json'), { projects });
   }
@@ -139,6 +152,16 @@ describe('claude-handoff helper', () => {
     assert.equal(payload.projects.length, 1);
     assert.equal(payload.projects[0].id, 'skill');
     assert.equal(payload.projects[0].cwd, '/tmp/workspace/project-a');
+  });
+
+  it('runs main when executed through a symlink path', () => {
+    const linkedScript = path.join(tmpRoot, 'claude-handoff-link.mjs');
+    fs.symlinkSync(HANDOFF_SCRIPT, linkedScript);
+
+    const result = runScriptPath(linkedScript, ['help']);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Usage:/);
+    assert.match(result.stdout, /claude-handoff\.mjs bind/);
   });
 
   // -----------------------------------------------------------------------
