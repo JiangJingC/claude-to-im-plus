@@ -15,9 +15,9 @@ ensure_built() {
   if [ ! -f "$SKILL_DIR/dist/daemon.mjs" ]; then
     need_build=1
   else
-    # Check if any source file is newer than the bundle
+    # Check if any non-test source file is newer than the bundle
     local newest_src
-    newest_src=$(find "$SKILL_DIR/src" -name '*.ts' -newer "$SKILL_DIR/dist/daemon.mjs" 2>/dev/null | head -1)
+    newest_src=$(find "$SKILL_DIR/src" -name '*.ts' -not -path '*/__tests__/*' -newer "$SKILL_DIR/dist/daemon.mjs" 2>/dev/null | head -1)
     if [ -n "$newest_src" ]; then
       need_build=1
     fi
