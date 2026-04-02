@@ -11,16 +11,17 @@ DAEMON_SH="${CTI_DAEMON_SH:-$SKILL_DIR/scripts/daemon.sh}"
 usage() {
   cat <<'EOF'
 Usage:
-  bash scripts/handoff.sh projects
-  bash scripts/handoff.sh threads <project-id> [limit]
-  bash scripts/handoff.sh weixin [thread-id] [binding-id-prefix]
-
-  bash scripts/handoff.sh claude projects
-  bash scripts/handoff.sh claude sessions <project-id> [limit]
-  bash scripts/handoff.sh claude
-  bash scripts/handoff.sh claude <session-id>
-  bash scripts/handoff.sh claude <session-id> <binding-id-prefix>
+  bash scripts/handoff.sh weixin
 EOF
+}
+
+removed_command_error() {
+  local command_name="$1"
+  echo "The handoff command '$command_name' has been removed. Use 'handoff weixin' from the current Codex or Claude Code session." >&2
+}
+
+explicit_selection_removed_error() {
+  echo "Explicit session/thread selection has been removed. Run 'handoff weixin' from the current Codex or Claude Code session." >&2
 }
 
 daemon_is_running() {
@@ -160,69 +161,63 @@ run_handoff_with_restart() {
   "$DAEMON_SH" status
 }
 
+detect_current_runtime() {
+  if [ -n "${CODEX_THREAD_ID:-}" ]; then
+    printf 'codex\n'
+    return 0
+  fi
+
+  local current_output
+  current_output="$(node "$CLAUDE_HELPER" current --json 2>&1)" || {
+    printf '%s\n' "$current_output" >&2
+    return 1
+  }
+
+  if [ -n "$current_output" ]; then
+    printf 'claude\n'
+    return 0
+  fi
+
+  echo "Cannot detect the current Codex or Claude Code session. Run 'handoff weixin' from an active conversation." >&2
+  return 1
+}
+
 case "${1:-help}" in
-  projects)
+  weixin)
     shift
-    node "$HELPER" projects "$@"
+    if [ $# -gt 0 ]; then
+      explicit_selection_removed_error
+      exit 1
+    fi
+
+    runtime="$(detect_current_runtime)" || exit 1
+    case "$runtime" in
+      codex)
+        run_handoff_with_restart codex "Codex handoff" node "$HELPER" bind --channel weixin
+        ;;
+      claude)
+        run_handoff_with_restart claude "Claude handoff" node "$CLAUDE_HELPER" bind --channel weixin
+        ;;
+      *)
+        echo "Unsupported detected runtime: $runtime" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+
+  projects)
+    removed_command_error "handoff projects"
+    exit 1
     ;;
 
   threads)
-    shift
-    if [ $# -lt 1 ]; then
-      usage
-      exit 1
-    fi
-    node "$HELPER" threads "$@"
-    ;;
-
-  weixin)
-    shift
-    thread_id="${1:-}"
-    binding_prefix="${2:-}"
-    bind_cmd=(node "$HELPER" bind --channel weixin)
-    if [ -n "$thread_id" ]; then
-      bind_cmd+=(--thread-id "$thread_id")
-    fi
-    if [ -n "$binding_prefix" ]; then
-      bind_cmd+=(--binding "$binding_prefix")
-    fi
-    run_handoff_with_restart codex "Codex handoff" "${bind_cmd[@]}"
+    removed_command_error "handoff threads"
+    exit 1
     ;;
 
   claude)
-    shift
-    sub="${1:-}"
-    case "$sub" in
-      projects)
-        shift
-        node "$CLAUDE_HELPER" projects "$@"
-        ;;
-
-      sessions)
-        shift
-        if [ $# -lt 1 ]; then
-          echo "Usage: handoff claude sessions <project-id> [limit]" >&2
-          exit 1
-        fi
-        node "$CLAUDE_HELPER" sessions "$@"
-        ;;
-
-      "")
-        # Auto-detect current session
-        run_handoff_with_restart claude "Claude handoff" node "$CLAUDE_HELPER" bind --channel weixin
-        ;;
-
-      *)
-        # First positional arg is a session id (or could be a session id with prefix)
-        session_id="$1"
-        binding_prefix="${2:-}"
-        bind_cmd=(node "$CLAUDE_HELPER" bind --channel weixin --session-id "$session_id")
-        if [ -n "$binding_prefix" ]; then
-          bind_cmd+=(--binding "$binding_prefix")
-        fi
-        run_handoff_with_restart claude "Claude handoff" "${bind_cmd[@]}"
-        ;;
-    esac
+    removed_command_error "handoff claude"
+    exit 1
     ;;
 
   help|--help|-h)

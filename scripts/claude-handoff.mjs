@@ -489,6 +489,25 @@ export function resolveCurrentSession() {
   return { ...best, ambiguous };
 }
 
+export function getCurrentSessionOrThrow() {
+  const current = resolveCurrentSession();
+  if (!current) {
+    throw new Error(
+      'Cannot detect the current Claude Code session.\n' +
+      'Run "handoff weixin" from an active Claude Code conversation.',
+    );
+  }
+
+  if (current.ambiguous) {
+    throw new Error(
+      `Multiple Claude Code sessions were found in ${current.cwd || process.cwd()}.\n` +
+      'Close the extra Claude Code windows in the same directory, then run "handoff weixin" again from the target conversation.',
+    );
+  }
+
+  return current;
+}
+
 // ---------------------------------------------------------------------------
 // Bindings helpers (mirror of codex-handoff.mjs)
 // ---------------------------------------------------------------------------
@@ -523,7 +542,7 @@ function selectBinding(channelType, bindingPrefix) {
       .map(({ value }) => `- ${value.id} | ${value.chatId}`)
       .join('\n');
     throw new Error(
-      `Multiple ${channelType} bindings found. Re-run with a binding id prefix.\n${details}`,
+      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target Weixin chat right now.\n${details}`,
     );
   }
 
@@ -584,20 +603,7 @@ export function bindSessionToChannel(options = {}) {
 
   // Auto-detect current session if none provided
   if (!sessionId) {
-    const current = resolveCurrentSession();
-    if (!current) {
-      throw new Error(
-        'Cannot detect current Claude session ID.\n' +
-        'Run "handoff claude sessions <project-id>" then "handoff claude <session-id>" explicitly.',
-      );
-    }
-    if (current.ambiguous) {
-      throw new Error(
-        `Multiple Claude sessions found in ${current.cwd}. Cannot auto-select.\n` +
-        'Run "handoff claude sessions <project-id>" to list sessions, then provide an explicit session id:\n' +
-        '  handoff claude <session-id>',
-      );
-    }
+    const current = getCurrentSessionOrThrow();
     sessionId = current.sessionId;
     detectedSession = current;
   } else if (!findKnownSession(sessionId)) {
@@ -692,11 +698,21 @@ function renderBinding(result) {
   ].join('\n');
 }
 
+function renderCurrentSession(current) {
+  return [
+    'Current Claude session:',
+    `- sessionId: ${current.sessionId}`,
+    `- cwd: ${current.cwd || '(unknown)'}`,
+    `- source: ${current.source || 'unknown'}`,
+  ].join('\n');
+}
+
 function usage() {
   return [
     'Usage:',
     '  node scripts/claude-handoff.mjs projects [--json]',
     '  node scripts/claude-handoff.mjs sessions <project-id> [limit] [--json]',
+    '  node scripts/claude-handoff.mjs current [--json]',
     '  node scripts/claude-handoff.mjs bind --channel weixin [--session-id <id>] [--binding <prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
   ].join('\n');
 }
@@ -784,6 +800,16 @@ export async function main(argv = process.argv.slice(2)) {
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(renderSessions(result));
+      }
+      return;
+    }
+
+    case 'current': {
+      const current = getCurrentSessionOrThrow();
+      if (parsed.json) {
+        console.log(JSON.stringify(current, null, 2));
+      } else {
+        console.log(renderCurrentSession(current));
       }
       return;
     }

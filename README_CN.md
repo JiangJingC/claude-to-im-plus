@@ -232,131 +232,45 @@ start bridge
 | `/claude-to-im status` | "bridge status" / "状态" | 查看运行状态 |
 | `/claude-to-im logs` | "查看日志" | 查看最近 50 行日志 |
 | `/claude-to-im logs 200` | "logs 200" | 查看最近 200 行日志 |
-| `/claude-to-im handoff projects` | "handoff projects" | 列出已配置的项目目录 |
-| `/claude-to-im handoff threads skill` | "handoff threads skill" | 列出某个项目下最近的 Codex thread |
-| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | 把当前 `CODEX_THREAD_ID` 接到微信继续 |
-| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | 把指定 Codex thread 接到指定微信聊天 |
-| `/claude-to-im handoff claude projects` | "handoff claude projects" | 列出已配置的项目目录（Claude） |
-| `/claude-to-im handoff claude sessions skill` | "handoff claude sessions skill" | 列出某个项目下最近的 Claude Code 会话 |
-| `/claude-to-im handoff claude` | "把当前 Claude 会话切到微信" | 自动检测当前 Claude 会话并接到微信 |
-| `/claude-to-im handoff claude <session-id>` | "handoff claude 20e42788-..." | 把指定 Claude 会话接到微信 |
-| `/claude-to-im handoff claude <session-id> <binding-prefix>` | "handoff claude 20e4... 3fe039c5" | 把指定 Claude 会话接到指定微信聊天 |
+| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | 自动识别当前 Codex 或 Claude Code 会话并接到微信 |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | 交互式修改配置 |
 | `/claude-to-im doctor` | "doctor" / "诊断" | 诊断问题 |
 
-## 切到微信继续聊（Codex）
+## 切到微信继续聊
 
-`handoff` 解决的是”我离开电脑后，想从微信继续当前 Codex 会话”这个场景。它会把某个微信聊天重新绑定到指定的 Codex thread，让下一条微信消息直接续上那条上下文。
+`handoff weixin` 现在只做一件事：把**当前**桌面会话切到微信继续聊。
 
-### 1. 配置项目目录
-
-创建 `~/.claude-to-im/projects.json`：
-
-```json
-{
-  "projects": [
-    {
-      "id": "skill",
-      "name": "Claude-to-IM Skill",
-      "cwd": "/absolute/path/to/project"
-    }
-  ]
-}
-```
-
-规则：
-
-- `id` 是你在 `handoff threads <project-id>` 里使用的短别名
-- `cwd` 必须是绝对路径
-- 匹配前会做路径规范化，但仍然是严格相等匹配，`/repo` 不会匹配 `/repo/subdir`
-
-### 2. 先列项目，再列 thread
-
-在 Claude Code 或 Codex 中执行：
+在 Codex 里执行：
 
 ```text
-/claude-to-im handoff projects
-/claude-to-im handoff threads skill
+claude-to-im handoff weixin
 ```
 
-helper 会读取本地 Codex 历史 `~/.codex/session_index.jsonl` 和 `~/.codex/sessions/**/*.jsonl`，然后列出 `session_meta.cwd` 与项目 `cwd` 严格匹配的最近 thread。
-
-### 3. 接到微信（Codex）
-
-当前桌面会话的快速路径：
+在 Claude Code 里执行：
 
 ```text
 /claude-to-im handoff weixin
 ```
 
-显式指定 thread id：
+自动识别顺序：
 
-```text
-/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0
-```
+- 如果存在 `CODEX_THREAD_ID`，按当前 Codex 会话处理
+- 否则按当前 Claude Code 会话处理（依次尝试 `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`）
 
-如果你已经有多个微信聊天 binding，就把 helper 输出里的 binding id 前缀一起带上：
+当前版本的行为边界：
 
-```text
-/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0 3fe039c5
-```
-
-补充说明：
-
-- 不传 thread id 时，`handoff weixin` 默认读取当前环境里的 `CODEX_THREAD_ID`
+- 只支持“当前会话 -> 微信”这一条主流程
+- 不再支持显式传 `<thread-id>` 或 `<session-id>`
+- 不再提供列项目、列 thread、列 session 的公开命令
 - 只有一个微信 binding 时会自动选中
 - 如果还没有微信 binding，先让目标微信聊天给 bot 发过至少一条消息
-- Codex handoff 会自动把全局 `CTI_RUNTIME` 切回 `codex`
+- 如果存在多个微信 binding，会直接报错；当前简化版不做自动选择
+- handoff 会自动把全局 `CTI_RUNTIME` 切到当前检测到的 runtime（`codex` 或 `claude`）
+- 这个 runtime 切换是全局的，不是按聊天隔离；重启后所有启用中的 channel / binding 都会一起使用同一个 runtime
 - handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
 - 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
 - 重启 bridge 会丢掉当前待处理的权限请求
-- handoff 只影响后续微信消息，不会把”当前正在生成中的这一轮回复”迁过去
-- 这个 runtime 切换是全局的，不是按聊天隔离；重启后所有启用中的 channel / binding 都会一起使用 `codex`
-
----
-
-## Claude Code 会话切到微信继续聊
-
-`handoff claude` 解决的是”我离开电脑后，想从微信继续当前 Claude Code 会话”这个场景。原理与 Codex handoff 一致，但读取的是 `~/.claude/` 下的会话数据。
-
-### 1. 配置项目目录（同上，复用同一份 projects.json）
-
-### 2. 列出 Claude Code 会话
-
-```text
-/claude-to-im handoff claude projects
-/claude-to-im handoff claude sessions skill
-```
-
-helper 会读取：
-- `~/.claude/usage-data/session-meta/<uuid>.json` — 会话开始时间和首条提示
-- `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` — 含 cwd 和时间戳的完整对话
-
-### 3. 接到微信（Claude Code）
-
-自动检测当前会话（依次尝试 `CLAUDE_SESSION_ID` 环境变量 → `CMUX_CLAUDE_PID` 环境变量 → `~/.claude/sessions/<PID>.json`）：
-
-```text
-/claude-to-im handoff claude
-```
-
-显式指定 session id：
-
-```text
-/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c
-```
-
-多个微信聊天时带上 binding id 前缀：
-
-```text
-/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
-```
-
-当前版本的过渡行为：
-- `handoff claude` 会自动把全局 `CTI_RUNTIME` 切到 `claude`
-- Codex 的 `handoff weixin` 会自动把全局 `CTI_RUNTIME` 切回 `codex`
-- 这是短期过渡方案，不是按聊天隔离的长期架构
-- 如果你同时启用了多个 channel，重启后它们都会一起使用当前选中的 runtime
+- handoff 只影响后续微信消息，不会把当前正在生成中的回复迁过去
 
 ### ⚠️ Claude 续接限制（v1）
 
@@ -434,7 +348,6 @@ helper 会读取：
 
 ```
 ~/.claude-to-im/
-├── projects.json          ← handoff 使用的项目别名配置（可选）
 ├── config.env             ← 凭据与配置 (chmod 600)
 ├── data/                  ← 持久化 JSON 存储
 │   ├── sessions.json

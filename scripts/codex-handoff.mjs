@@ -333,7 +333,7 @@ function selectBinding(channelType, bindingPrefix) {
       .map(({ value }) => `- ${value.id} | ${value.chatId}`)
       .join('\n');
     throw new Error(
-      `Multiple ${channelType} bindings found. Re-run with a binding id prefix.\n${details}`,
+      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target Weixin chat right now.\n${details}`,
     );
   }
 

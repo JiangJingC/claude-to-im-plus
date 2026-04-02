@@ -38,6 +38,9 @@ describe('handoff.sh', () => {
       encoding: 'utf8',
       env: {
         ...process.env,
+        CODEX_THREAD_ID: '',
+        CLAUDE_SESSION_ID: '',
+        CMUX_CLAUDE_PID: '',
         CTI_HOME: ctiHome,
         CODEX_HOME: codexHome,
         CLAUDE_HOME: claudeHome,
@@ -148,13 +151,15 @@ esac
   });
 
   // -------------------------------------------------------------------------
-  // Codex / weixin handoff (existing tests — must continue to pass)
+  // Public handoff entrypoint: `handoff weixin`
   // -------------------------------------------------------------------------
 
-  it('restarts the bridge around a successful weixin handoff', () => {
+  it('restarts the bridge around a successful Codex weixin handoff', () => {
     fs.writeFileSync(stateFile, 'running', 'utf8');
 
-    const result = run(['weixin', 'thread-1']);
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
     assert.equal(result.status, 0, result.stderr);
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
@@ -170,7 +175,9 @@ esac
   });
 
   it('does not auto-start the bridge if it was not already running', () => {
-    const result = run(['weixin', 'thread-1']);
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
     assert.equal(result.status, 0, result.stderr);
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
@@ -178,82 +185,11 @@ esac
     assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
   });
 
-  // -------------------------------------------------------------------------
-  // Claude handoff — projects / sessions list (no daemon interaction)
-  // -------------------------------------------------------------------------
-
-  it('claude projects: delegates to claude-handoff.mjs projects', () => {
-    writeJson(path.join(ctiHome, 'projects.json'), {
-      projects: [
-        { id: 'myproj', name: 'My Project', cwd: '/tmp/workspace/project-a' },
-      ],
-    });
-
-    const result = run(['claude', 'projects']);
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /myproj/);
-    assert.match(result.stdout, /My Project/);
-  });
-
-  it('claude sessions: delegates to claude-handoff.mjs sessions', () => {
-    writeJson(path.join(ctiHome, 'projects.json'), {
-      projects: [
-        { id: 'myproj', name: 'My Project', cwd: '/tmp/workspace/project-a' },
-      ],
-    });
-
-    // Seed a Claude session file
-    const encodedCwd = 'tmp-workspace-project-a';
-    writeJsonl(path.join(claudeHome, 'projects', encodedCwd, 'sess-001.jsonl'), [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'Hello Claude' },
-        uuid: 'msg-1',
-        timestamp: '2026-04-01T12:00:00.000Z',
-        sessionId: 'sess-001',
-        cwd: '/tmp/workspace/project-a',
-        permissionMode: 'default',
-        userType: 'external',
-        entrypoint: 'cli',
-      },
-    ]);
-
-    const result = run(['claude', 'sessions', 'myproj']);
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /sess-001/);
-  });
-
-  it('claude sessions: shows error when project-id is missing', () => {
-    const result = run(['claude', 'sessions']);
-    assert.equal(result.status, 1);
-    // error comes from the shell or the helper
-    assert.match(result.stderr, /project-id|project_id|sessions/i);
-  });
-
-  // -------------------------------------------------------------------------
-  // Claude handoff — bind with explicit session-id (daemon restart lifecycle)
-  // -------------------------------------------------------------------------
-
-  it('claude <session-id>: restarts bridge around successful handoff', () => {
+  it('auto-detects the current Claude session via CLAUDE_SESSION_ID', () => {
     fs.writeFileSync(stateFile, 'running', 'utf8');
-
-    // Seed a Claude session so cwd can be resolved
-    const encodedCwd = 'tmp-workspace-project-a';
-    writeJsonl(path.join(claudeHome, 'projects', encodedCwd, 'claude-sess-1.jsonl'), [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'test' },
-        uuid: 'u1',
-        timestamp: '2026-04-01T12:00:00.000Z',
-        sessionId: 'claude-sess-1',
-        cwd: '/tmp/workspace/project-a',
-        permissionMode: 'default',
-        userType: 'external',
-        entrypoint: 'cli',
-      },
-    ]);
-
-    const result = run(['claude', 'claude-sess-1']);
+    const result = run(['weixin'], {
+      CLAUDE_SESSION_ID: 'env-detected-session',
+    });
     assert.equal(result.status, 0, result.stderr);
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
@@ -263,42 +199,45 @@ esac
     const bindings = JSON.parse(
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
-    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'claude-sess-1');
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'env-detected-session');
     assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
     assert.match(result.stderr, /Global runtime switched: codex -> claude/);
   });
 
-  it('claude <session-id>: does not restart bridge when not running', () => {
-    const encodedCwd = 'tmp-workspace-project-a';
-    writeJsonl(path.join(claudeHome, 'projects', encodedCwd, 'claude-sess-2.jsonl'), [
-      {
-        type: 'user',
-        message: { role: 'user', content: 'test' },
-        uuid: 'u1',
-        timestamp: '2026-04-01T12:00:00.000Z',
-        sessionId: 'claude-sess-2',
-        cwd: '/tmp/workspace/project-a',
-        permissionMode: 'default',
-        userType: 'external',
-        entrypoint: 'cli',
-      },
-    ]);
+  it('auto-detects the current Claude session via CMUX_CLAUDE_PID', () => {
+    const fakePid = '42424';
+    writeJson(path.join(claudeHome, 'sessions', `${fakePid}.json`), {
+      sessionId: 'pid-detected-session',
+      cwd: '/tmp/workspace/project-a',
+      startedAt: 1775102000000,
+    });
 
-    const result = run(['claude', 'claude-sess-2']);
+    const result = run(['weixin'], {
+      CMUX_CLAUDE_PID: fakePid,
+    });
     assert.equal(result.status, 0, result.stderr);
 
-    const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
-    assert.deepEqual(calls, ['status', 'status']);
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'pid-detected-session');
     assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
-    assert.match(result.stderr, /Bridge was not running/);
   });
 
-  // -------------------------------------------------------------------------
-  // Claude handoff — auto-detect via CLAUDE_SESSION_ID
-  // -------------------------------------------------------------------------
+  it('errors with a clear message when the current session cannot be detected', () => {
+    const result = run(['weixin'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Cannot detect the current Claude Code session|Cannot detect the current Codex or Claude Code session/);
+  });
 
-  it('claude (no session-id): auto-detects via CLAUDE_SESSION_ID env', () => {
-    const result = run(['claude'], {
+  it('prefers CODEX_THREAD_ID when both Codex and Claude hints are present', () => {
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
       CLAUDE_SESSION_ID: 'env-detected-session',
     });
     assert.equal(result.status, 0, result.stderr);
@@ -306,18 +245,8 @@ esac
     const bindings = JSON.parse(
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
-    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'env-detected-session');
-    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
-  });
-
-  it('claude (no session-id): errors with actionable message when auto-detect fails', () => {
-    const result = run(['claude'], {
-      CLAUDE_SESSION_ID: '',
-      CMUX_CLAUDE_PID: '',
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /Cannot detect current Claude session ID/);
-    assert.match(result.stderr, /handoff claude sessions/);
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'thread-1');
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
   });
 
   it('switches global runtime back to codex for Codex weixin handoff', () => {
@@ -331,7 +260,9 @@ esac
     );
     fs.writeFileSync(stateFile, 'running', 'utf8');
 
-    const result = run(['weixin', 'thread-1']);
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
     assert.equal(result.status, 0, result.stderr);
 
     assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
@@ -342,13 +273,22 @@ esac
     const failingHelper = path.join(tmpRoot, 'failing-claude-helper.mjs');
     fs.writeFileSync(
       failingHelper,
-      "console.error('bind failed intentionally'); process.exit(1);\n",
+      [
+        '#!/usr/bin/env node',
+        "const command = process.argv[2] || '';",
+        "if (command === 'current') {",
+        "  console.log(JSON.stringify({ sessionId: 'env-detected-session', cwd: process.cwd(), source: 'test' }));",
+        '  process.exit(0);',
+        '}',
+        "console.error('bind failed intentionally');",
+        'process.exit(1);',
+        '',
+      ].join('\n'),
       'utf8',
     );
     fs.writeFileSync(stateFile, 'running', 'utf8');
 
-    const result = run(['claude'], {
-      CLAUDE_SESSION_ID: 'env-detected-session',
+    const result = run(['weixin'], {
       CTI_CLAUDE_HANDOFF_HELPER: failingHelper,
     });
     assert.equal(result.status, 1);
@@ -363,7 +303,7 @@ esac
   it('keeps the switched runtime and written binding when restart fails', () => {
     fs.writeFileSync(stateFile, 'running', 'utf8');
 
-    const result = run(['claude'], {
+    const result = run(['weixin'], {
       CLAUDE_SESSION_ID: 'env-detected-session',
       CTI_TEST_FAIL_START: '1',
     });
@@ -391,7 +331,7 @@ esac
       ].join('\n'),
     );
 
-    const result = run(['claude'], {
+    const result = run(['weixin'], {
       CLAUDE_SESSION_ID: 'env-detected-session',
     });
     assert.equal(result.status, 0, result.stderr);
@@ -401,5 +341,67 @@ esac
     assert.match(config, /^CTI_DEFAULT_WORKDIR=\/tmp\/workspace\/project-z$/m);
     assert.match(config, /^CUSTOM_VALUE=keep-me$/m);
     assert.match(config, /^CTI_RUNTIME=claude$/m);
+  });
+
+  it('errors when there are multiple weixin bindings', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
+      'weixin:chat-a': {
+        id: 'binding-aaa111',
+        channelType: 'weixin',
+        chatId: 'chat-a',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-thread-id',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+      'weixin:chat-b': {
+        id: 'binding-bbb222',
+        channelType: 'weixin',
+        chatId: 'chat-b',
+        codepilotSessionId: 'other-session-id',
+        sdkSessionId: 'other-thread-id',
+        workingDirectory: '/tmp/workspace/project-b',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Multiple weixin bindings found/);
+  });
+
+  it('errors when there is no weixin binding yet', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {});
+
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /No weixin bindings found/);
+  });
+
+  it('errors when explicit thread or session arguments are provided', () => {
+    const result = run(['weixin', 'thread-1']);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Explicit session\/thread selection has been removed/);
+  });
+
+  it('returns a clear error for removed commands', () => {
+    for (const args of [['projects'], ['threads'], ['claude']]) {
+      const result = run(args);
+      assert.equal(result.status, 1);
+      assert.match(result.stderr, /has been removed/);
+      assert.match(result.stderr, /handoff weixin/);
+    }
   });
 });

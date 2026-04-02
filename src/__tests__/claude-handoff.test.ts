@@ -154,6 +154,17 @@ describe('claude-handoff helper', () => {
     assert.equal(payload.projects[0].cwd, '/tmp/workspace/project-a');
   });
 
+  it('current: returns the current Claude session as JSON', () => {
+    const result = run(['current', '--json'], {
+      CLAUDE_SESSION_ID: 'session-from-env',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.sessionId, 'session-from-env');
+    assert.equal(payload.source, 'env');
+  });
+
   it('runs main when executed through a symlink path', () => {
     const linkedScript = path.join(tmpRoot, 'claude-handoff-link.mjs');
     fs.symlinkSync(HANDOFF_SCRIPT, linkedScript);
@@ -497,8 +508,16 @@ describe('claude-handoff helper', () => {
       CMUX_CLAUDE_PID: '',
     });
     assert.equal(result.status, 1);
-    assert.match(result.stderr, /Cannot detect current Claude session ID/);
-    assert.match(result.stderr, /handoff claude sessions/);
+    assert.match(result.stderr, /Cannot detect the current Claude Code session/);
+  });
+
+  it('current: errors when no Claude session can be detected', () => {
+    const result = run(['current', '--json'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Cannot detect the current Claude Code session/);
   });
 
   it('bind: auto-detects session from CMUX_CLAUDE_PID sessions file', () => {

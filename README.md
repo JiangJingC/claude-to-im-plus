@@ -232,133 +232,45 @@ All commands are run inside Claude Code or Codex:
 | `/claude-to-im status` | "bridge status" / "状态" | Show daemon status |
 | `/claude-to-im logs` | "查看日志" | Show last 50 log lines |
 | `/claude-to-im logs 200` | "logs 200" | Show last 200 log lines |
-| `/claude-to-im handoff projects` | "handoff projects" | List configured project directories |
-| `/claude-to-im handoff threads skill` | "handoff threads skill" | List recent Codex threads under one project |
-| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | Handoff the current `CODEX_THREAD_ID` to Weixin |
-| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | Handoff an explicit Codex thread to a specific Weixin chat |
-| `/claude-to-im handoff claude projects` | "handoff claude projects" | List configured project directories (Claude) |
-| `/claude-to-im handoff claude sessions skill` | "handoff claude sessions skill" | List recent Claude Code sessions under one project |
-| `/claude-to-im handoff claude` | "把当前 Claude 会话切到微信" | Auto-detect current Claude session and bind to Weixin |
-| `/claude-to-im handoff claude <session-id>` | "handoff claude 20e42788-..." | Handoff explicit Claude session to Weixin |
-| `/claude-to-im handoff claude <session-id> <binding-prefix>` | "handoff claude 20e4... 3fe039c5" | Handoff explicit Claude session to a specific Weixin chat |
+| `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | Auto-detect the current Codex or Claude Code session and hand it off to Weixin |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | Update config interactively |
 | `/claude-to-im doctor` | "doctor" / "诊断" | Diagnose issues |
 
 ## Handoff to Weixin
 
-`handoff` is for the "continue this Codex conversation from WeChat after I leave my desk" workflow. It rebinds a Weixin chat to a Codex thread so the next message sent from Weixin resumes that thread.
+`handoff weixin` now does exactly one thing: hand off the **current** desktop session to Weixin.
 
-### 1. Configure project directories
-
-Create `~/.claude-to-im/projects.json`:
-
-```json
-{
-  "projects": [
-    {
-      "id": "skill",
-      "name": "Claude-to-IM Skill",
-      "cwd": "/absolute/path/to/project"
-    }
-  ]
-}
-```
-
-Rules:
-
-- `id` is the short alias you use in `handoff threads <project-id>`
-- `cwd` must be absolute
-- matching is strict after normalization, so `/repo` matches `/repo` but not `/repo/subdir`
-
-### 2. Inspect projects and threads (Codex)
-
-Inside Claude Code or Codex:
+In Codex:
 
 ```text
-/claude-to-im handoff projects
-/claude-to-im handoff threads skill
+claude-to-im handoff weixin
 ```
 
-The helper reads local Codex history from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/*.jsonl`, then shows recent threads whose `session_meta.cwd` exactly matches the configured project `cwd`.
-
-### 3. Handoff to Weixin (Codex)
-
-Fast path for the current desktop session:
+In Claude Code:
 
 ```text
 /claude-to-im handoff weixin
 ```
 
-Explicit thread id:
+Detection order:
 
-```text
-/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0
-```
+- If `CODEX_THREAD_ID` exists, treat the current session as Codex
+- Otherwise treat it as the current Claude Code session (`CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`)
 
-If you have multiple Weixin chats bound already, add the binding id prefix shown by the helper:
+Current behavior and limits:
 
-```text
-/claude-to-im handoff weixin 019d48c5-46f8-7d92-8e49-5c9d9fc164a0 3fe039c5
-```
-
-Notes:
-
-- if you omit the thread id, `handoff weixin` uses the current `CODEX_THREAD_ID`
-- if exactly one Weixin binding exists, it is selected automatically
-- if no Weixin binding exists yet, send one message from the target Weixin chat first so the bridge can create the binding
-- Codex handoff also auto-switches the global `CTI_RUNTIME` back to `codex`
-- handoff creates a new local bridge session and keeps old sessions/message files for auditability
-- the bridge restarts only when it was already running, because bindings are loaded at startup
-- restarting the bridge drops any pending permission requests
-- handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
-- this runtime switch is global, not per-chat: all enabled channels/bindings will use `codex` after restart
-
----
-
-## Claude Code Session Handoff to Weixin
-
-`handoff claude` is for the "continue this Claude Code session from WeChat" workflow. It works like Codex handoff, but reads session data from `~/.claude/` instead of `~/.codex/`.
-
-### 1. Configure project directories (same as above)
-
-Re-use the same `~/.claude-to-im/projects.json` you created for Codex handoff.
-
-### 2. Inspect projects and sessions (Claude Code)
-
-```text
-/claude-to-im handoff claude projects
-/claude-to-im handoff claude sessions skill
-```
-
-Session data is read from:
-- `~/.claude/usage-data/session-meta/<uuid>.json` — session start time and first prompt
-- `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` — full conversation with cwd and timestamps
-
-### 3. Handoff to Weixin (Claude Code)
-
-Auto-detect the current Claude Code session (tries `CLAUDE_SESSION_ID` env → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`):
-
-```text
-/claude-to-im handoff claude
-```
-
-Explicit session id:
-
-```text
-/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c
-```
-
-With binding prefix (multiple Weixin chats):
-
-```text
-/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
-```
-
-Transition behavior in the current version:
-- `handoff claude` auto-switches the global `CTI_RUNTIME` to `claude`
-- Codex `handoff weixin` auto-switches the global `CTI_RUNTIME` back to `codex`
-- this is a short-term global switch, not per-chat isolation
-- if you have multiple channels enabled, all of them will use the selected runtime after restart
+- Only the “current session -> Weixin” flow is supported
+- Explicit `<thread-id>` / `<session-id>` handoff is no longer supported
+- Public project/thread/session listing commands were removed
+- If exactly one Weixin binding exists, it is selected automatically
+- If no Weixin binding exists yet, send one message from the target Weixin chat first
+- If multiple Weixin bindings exist, the command fails; this simplified flow does not auto-pick a target chat
+- Handoff auto-switches the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)
+- This runtime switch is global, not per-chat: all enabled channels/bindings use the same runtime after restart
+- Handoff creates a new local bridge session and keeps old sessions/message files for auditability
+- The bridge restarts only when it was already running, because bindings are loaded at startup
+- Restarting the bridge drops any pending permission requests
+- Handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
 
 ### ⚠️ Claude resume limitations (v1)
 
@@ -439,7 +351,6 @@ Additional notes:
 
 ```
 ~/.claude-to-im/
-├── projects.json          ← Optional project aliases for handoff
 ├── config.env             ← Credentials & settings (chmod 600)
 ├── data/                  ← Persistent JSON storage
 │   ├── sessions.json
