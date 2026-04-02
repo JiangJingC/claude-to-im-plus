@@ -306,10 +306,12 @@ helper 会读取本地 Codex 历史 `~/.codex/session_index.jsonl` 和 `~/.codex
 - 不传 thread id 时，`handoff weixin` 默认读取当前环境里的 `CODEX_THREAD_ID`
 - 只有一个微信 binding 时会自动选中
 - 如果还没有微信 binding，先让目标微信聊天给 bot 发过至少一条消息
+- Codex handoff 会自动把全局 `CTI_RUNTIME` 切回 `codex`
 - handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
 - 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
 - 重启 bridge 会丢掉当前待处理的权限请求
 - handoff 只影响后续微信消息，不会把”当前正在生成中的这一轮回复”迁过去
+- 这个 runtime 切换是全局的，不是按聊天隔离；重启后所有启用中的 channel / binding 都会一起使用 `codex`
 
 ---
 
@@ -349,6 +351,12 @@ helper 会读取：
 ```text
 /claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
 ```
+
+当前版本的过渡行为：
+- `handoff claude` 会自动把全局 `CTI_RUNTIME` 切到 `claude`
+- Codex 的 `handoff weixin` 会自动把全局 `CTI_RUNTIME` 切回 `codex`
+- 这是短期过渡方案，不是按聊天隔离的长期架构
+- 如果你同时启用了多个 channel，重启后它们都会一起使用当前选中的 runtime
 
 ### ⚠️ Claude 续接限制（v1）
 

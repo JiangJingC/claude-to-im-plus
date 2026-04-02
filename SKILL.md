@@ -238,6 +238,10 @@ Key behavior that applies to **both** Codex and Claude handoff:
 - if no Weixin binding exists yet, tell the user to send at least one message from the target Weixin chat first so the bridge can create the binding
 - the helper creates a brand-new bridge session and points the selected binding to the target thread/session; it does not delete old sessions or message history
 - the helper clears the binding/session model pin by default to avoid resume failures caused by model mismatch
+- `scripts/handoff.sh` also auto-switches the global runtime as a short-term transition:
+  - `handoff claude` switches `CTI_RUNTIME` to `claude`
+  - Codex `handoff weixin` switches `CTI_RUNTIME` to `codex`
+- this runtime switch is global, not per-chat; after restart, all enabled channels/bindings use the selected runtime
 - `scripts/handoff.sh` restarts the bridge only if it was already running, because bindings are loaded on startup
 - restarting the bridge drops any pending permission requests; call this out explicitly
 - handoff only affects future messages from Weixin; it does not migrate the reply that is already in progress

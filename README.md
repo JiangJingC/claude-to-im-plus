@@ -306,10 +306,12 @@ Notes:
 - if you omit the thread id, `handoff weixin` uses the current `CODEX_THREAD_ID`
 - if exactly one Weixin binding exists, it is selected automatically
 - if no Weixin binding exists yet, send one message from the target Weixin chat first so the bridge can create the binding
+- Codex handoff also auto-switches the global `CTI_RUNTIME` back to `codex`
 - handoff creates a new local bridge session and keeps old sessions/message files for auditability
 - the bridge restarts only when it was already running, because bindings are loaded at startup
 - restarting the bridge drops any pending permission requests
 - handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
+- this runtime switch is global, not per-chat: all enabled channels/bindings will use `codex` after restart
 
 ---
 
@@ -351,6 +353,12 @@ With binding prefix (multiple Weixin chats):
 ```text
 /claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
 ```
+
+Transition behavior in the current version:
+- `handoff claude` auto-switches the global `CTI_RUNTIME` to `claude`
+- Codex `handoff weixin` auto-switches the global `CTI_RUNTIME` back to `codex`
+- this is a short-term global switch, not per-chat isolation
+- if you have multiple channels enabled, all of them will use the selected runtime after restart
 
 ### ⚠️ Claude resume limitations (v1)
 

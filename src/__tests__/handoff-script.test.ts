@@ -30,6 +30,7 @@ describe('handoff.sh', () => {
   let stateFile: string;
   let logFile: string;
   let fakeDaemon: string;
+  let configFile: string;
 
   function run(args: string[], extraEnv: Record<string, string> = {}) {
     return spawnSync('bash', [HANDOFF_SH, ...args], {
@@ -48,6 +49,15 @@ describe('handoff.sh', () => {
     });
   }
 
+  function writeConfig(contents: string): void {
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, contents, 'utf8');
+  }
+
+  function readConfig(): string {
+    return fs.readFileSync(configFile, 'utf8');
+  }
+
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-handoff-wrapper-'));
     ctiHome = path.join(tmpRoot, 'cti-home');
@@ -56,6 +66,16 @@ describe('handoff.sh', () => {
     stateFile = path.join(tmpRoot, 'daemon.state');
     logFile = path.join(tmpRoot, 'daemon.log');
     fakeDaemon = path.join(tmpRoot, 'fake-daemon.sh');
+    configFile = path.join(ctiHome, 'config.env');
+
+    writeConfig(
+      [
+        'CTI_RUNTIME=codex',
+        'CTI_ENABLED_CHANNELS=weixin',
+        'CTI_DEFAULT_WORKDIR=/tmp/workspace/project-z',
+        '',
+      ].join('\n'),
+    );
 
     writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
       'weixin:chat-a': {
@@ -110,6 +130,10 @@ case "$1" in
     echo "Bridge stopped"
     ;;
   start)
+    if [ "\${CTI_TEST_FAIL_START:-0}" = "1" ]; then
+      echo "Bridge failed to start" >&2
+      exit 1
+    fi
     touch "$CTI_TEST_STATE_FILE"
     echo "Bridge started"
     ;;
@@ -141,6 +165,8 @@ esac
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
     assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'thread-1');
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+    assert.match(result.stderr, /Global runtime already set to: codex/);
   });
 
   it('does not auto-start the bridge if it was not already running', () => {
@@ -149,6 +175,7 @@ esac
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
     assert.deepEqual(calls, ['status', 'status']);
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
   });
 
   // -------------------------------------------------------------------------
@@ -237,6 +264,8 @@ esac
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
     assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'claude-sess-1');
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
+    assert.match(result.stderr, /Global runtime switched: codex -> claude/);
   });
 
   it('claude <session-id>: does not restart bridge when not running', () => {
@@ -260,6 +289,8 @@ esac
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
     assert.deepEqual(calls, ['status', 'status']);
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
+    assert.match(result.stderr, /Bridge was not running/);
   });
 
   // -------------------------------------------------------------------------
@@ -276,6 +307,7 @@ esac
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
     assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'env-detected-session');
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
   });
 
   it('claude (no session-id): errors with actionable message when auto-detect fails', () => {
@@ -286,5 +318,88 @@ esac
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Cannot detect current Claude session ID/);
     assert.match(result.stderr, /handoff claude sessions/);
+  });
+
+  it('switches global runtime back to codex for Codex weixin handoff', () => {
+    writeConfig(
+      [
+        'CTI_RUNTIME=claude',
+        'CTI_ENABLED_CHANNELS=weixin',
+        'CTI_DEFAULT_WORKDIR=/tmp/workspace/project-z',
+        '',
+      ].join('\n'),
+    );
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['weixin', 'thread-1']);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+    assert.match(result.stderr, /Global runtime switched: claude -> codex/);
+  });
+
+  it('restores the original runtime and daemon when bind fails', () => {
+    const failingHelper = path.join(tmpRoot, 'failing-claude-helper.mjs');
+    fs.writeFileSync(
+      failingHelper,
+      "console.error('bind failed intentionally'); process.exit(1);\n",
+      'utf8',
+    );
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['claude'], {
+      CLAUDE_SESSION_ID: 'env-detected-session',
+      CTI_CLAUDE_HANDOFF_HELPER: failingHelper,
+    });
+    assert.equal(result.status, 1);
+
+    const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
+    assert.deepEqual(calls, ['status', 'stop', 'start']);
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+    assert.match(result.stderr, /Bind failed\. Restored global runtime to codex\./);
+    assert.ok(fs.existsSync(stateFile));
+  });
+
+  it('keeps the switched runtime and written binding when restart fails', () => {
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['claude'], {
+      CLAUDE_SESSION_ID: 'env-detected-session',
+      CTI_TEST_FAIL_START: '1',
+    });
+    assert.equal(result.status, 1);
+
+    const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
+    assert.deepEqual(calls, ['status', 'stop', 'start']);
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'env-detected-session');
+    assert.match(result.stderr, /binding was written/i);
+    assert.match(result.stderr, /Bridge restart: failed/);
+  });
+
+  it('appends CTI_RUNTIME when it is missing and preserves other config lines', () => {
+    writeConfig(
+      [
+        'CTI_ENABLED_CHANNELS=weixin',
+        'CTI_DEFAULT_WORKDIR=/tmp/workspace/project-z',
+        'CUSTOM_VALUE=keep-me',
+        '',
+      ].join('\n'),
+    );
+
+    const result = run(['claude'], {
+      CLAUDE_SESSION_ID: 'env-detected-session',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const config = readConfig();
+    assert.match(config, /^CTI_ENABLED_CHANNELS=weixin$/m);
+    assert.match(config, /^CTI_DEFAULT_WORKDIR=\/tmp\/workspace\/project-z$/m);
+    assert.match(config, /^CUSTOM_VALUE=keep-me$/m);
+    assert.match(config, /^CTI_RUNTIME=claude$/m);
   });
 });
