@@ -379,7 +379,47 @@ describe('CodexProvider', () => {
     }
   });
 
-  it('passes skipGitRepoCheck only when CTI_CODEX_SKIP_GIT_REPO_CHECK=true', async () => {
+  it('passes skipGitRepoCheck by default when CTI_CODEX_SKIP_GIT_REPO_CHECK is unset', async () => {
+    const old = process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
+    delete process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
+    try {
+      const { CodexProvider } = await import('../codex-provider.js');
+      const { PendingPermissions } = await import('../permission-gateway.js');
+      const provider = new CodexProvider(new PendingPermissions());
+
+      let capturedStartOptions: Record<string, unknown> | undefined;
+      const mockThread = {
+        runStreamed: () => ({
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } };
+          })(),
+        }),
+      };
+      (provider as any).sdk = { Codex: class { constructor() {} } };
+      (provider as any).codex = {
+        startThread: (opts: Record<string, unknown>) => {
+          capturedStartOptions = opts;
+          return mockThread;
+        },
+      };
+
+      const stream = provider.streamChat({
+        prompt: 'hello',
+        sessionId: 'skip-git-check-default-session',
+      });
+      await collectStream(stream);
+
+      assert.equal(capturedStartOptions?.skipGitRepoCheck, true);
+    } finally {
+      if (old === undefined) {
+        delete process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
+      } else {
+        process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK = old;
+      }
+    }
+  });
+
+  it('passes skipGitRepoCheck when CTI_CODEX_SKIP_GIT_REPO_CHECK=true', async () => {
     const old = process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
     process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK = 'true';
     try {
@@ -410,6 +450,46 @@ describe('CodexProvider', () => {
       await collectStream(stream);
 
       assert.equal(capturedStartOptions?.skipGitRepoCheck, true);
+    } finally {
+      if (old === undefined) {
+        delete process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
+      } else {
+        process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK = old;
+      }
+    }
+  });
+
+  it('does not pass skipGitRepoCheck when CTI_CODEX_SKIP_GIT_REPO_CHECK=false', async () => {
+    const old = process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;
+    process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK = 'false';
+    try {
+      const { CodexProvider } = await import('../codex-provider.js');
+      const { PendingPermissions } = await import('../permission-gateway.js');
+      const provider = new CodexProvider(new PendingPermissions());
+
+      let capturedStartOptions: Record<string, unknown> | undefined;
+      const mockThread = {
+        runStreamed: () => ({
+          events: (async function* () {
+            yield { type: 'turn.completed', usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } };
+          })(),
+        }),
+      };
+      (provider as any).sdk = { Codex: class { constructor() {} } };
+      (provider as any).codex = {
+        startThread: (opts: Record<string, unknown>) => {
+          capturedStartOptions = opts;
+          return mockThread;
+        },
+      };
+
+      const stream = provider.streamChat({
+        prompt: 'hello',
+        sessionId: 'skip-git-check-strict-session',
+      });
+      await collectStream(stream);
+
+      assert.equal(capturedStartOptions?.skipGitRepoCheck, undefined);
     } finally {
       if (old === undefined) {
         delete process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK;

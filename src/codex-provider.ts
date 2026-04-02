@@ -61,9 +61,9 @@ function shouldPassModelToCodex(): boolean {
   return process.env.CTI_CODEX_PASS_MODEL === 'true';
 }
 
-/** Allow Codex to run outside a trusted Git repository when explicitly enabled. */
+/** Allow Codex to run outside a trusted Git repository by default. */
 function shouldSkipGitRepoCheck(): boolean {
-  return process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK === 'true';
+  return process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK !== 'false';
 }
 
 function resolveSandboxMode(): string | undefined {

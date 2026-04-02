@@ -262,6 +262,13 @@ if [ "$CTI_RUNTIME" = "codex" ] || [ "$CTI_RUNTIME" = "auto" ]; then
       check "Codex auth available (not found — needed only for Codex fallback)" 0
     fi
   fi
+
+  CODEX_SKIP_GIT_REPO_CHECK=$(get_config CTI_CODEX_SKIP_GIT_REPO_CHECK)
+  if [ "$CODEX_SKIP_GIT_REPO_CHECK" = "false" ]; then
+    echo "[INFO] Codex trusted-directory repo check is enabled (CTI_CODEX_SKIP_GIT_REPO_CHECK=false). Untrusted project folders may fail to start."
+  else
+    echo "[INFO] Codex trusted-directory repo check is bypassed by default for bridge-created sessions."
+  fi
 fi
 
 # --- dist/daemon.mjs freshness ---

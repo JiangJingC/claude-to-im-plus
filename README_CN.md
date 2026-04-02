@@ -38,6 +38,8 @@ Claude Code / Codex → 读写你的代码库
 
 如果你希望 IM 桥接后的 Codex 会话在 handoff 之后仍然保持完整文件写权限，请在 `~/.claude-to-im/config.env` 中设置 `CTI_CODEX_SANDBOX_MODE=danger-full-access`，然后重启 bridge。
 
+另外，Codex handoff 现在默认会跳过 Codex 的 trusted-directory Git repo 检查，这样你在不同项目目录之间切换时不需要先逐个 trust。只有当你明确想恢复 Codex 原生的严格保护时，才需要设置 `CTI_CODEX_SKIP_GIT_REPO_CHECK=false`。
+
 ## 安装
 
 请先按你实际使用的 AI Agent 产品选择对应安装方式。
@@ -288,6 +290,7 @@ claude-to-im handoff weixin
 运行时相关补充：
 - `CTI_AUTO_APPROVE=true` 表示桥接自动放行工具请求，但它仍然不等于继承 `--dangerously-skip-permissions`
 - `CTI_CODEX_SANDBOX_MODE` 只对 Codex runtime 生效
+- `CTI_CODEX_SKIP_GIT_REPO_CHECK` 默认会跳过 Codex 的 trusted-directory repo 检查；只有设成 `false` 才会恢复严格模式
 - 如果 `CTI_RUNTIME=claude`，建议把 `CTI_DEFAULT_MODEL` 留空，或改成 Claude 模型名；Codex/OpenAI 模型名会被忽略
 
 **请勿对用户暗示”已完全继承桌面端权限”。**
