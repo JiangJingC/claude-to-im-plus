@@ -9,7 +9,7 @@ description: |
   Subcommands: setup, start, stop, status, logs, handoff, reconfigure, doctor.
   Do NOT use for: building standalone bots, webhook integrations, or coding with IM
   platform SDKs — those are regular programming tasks.
-argument-hint: "setup | start | stop | status | logs [N] | handoff projects | handoff threads <project-id> [limit] | handoff weixin [thread-id] [binding-id-prefix] | reconfigure | doctor"
+argument-hint: "setup | start | stop | status | logs [N] | handoff projects | handoff threads <project-id> [limit] | handoff weixin [thread-id] [binding-id-prefix] | handoff claude projects | handoff claude sessions <project-id> [limit] | handoff claude | handoff claude <session-id> | handoff claude <session-id> <binding-id-prefix> | reconfigure | doctor"
 allowed-tools:
   - Bash
   - Read
@@ -40,7 +40,7 @@ Parse the user's intent from `$ARGUMENTS` into one of these subcommands:
 | `stop`, `stop bridge`, `停止`, `停止桥接` | stop |
 | `status`, `bridge status`, `状态`, `运行状态`, `怎么看桥接的运行状态` | status |
 | `logs`, `logs 200`, `查看日志`, `查看日志 200` | logs |
-| `handoff projects`, `handoff threads skill`, `handoff weixin`, `handoff weixin <thread-id>`, `把当前会话切到微信`, `列出某个项目下的 Codex 会话` | handoff |
+| `handoff projects`, `handoff threads skill`, `handoff weixin`, `handoff weixin <thread-id>`, `handoff claude projects`, `handoff claude sessions <project-id>`, `handoff claude`, `handoff claude <session-id>`, `把当前会话切到微信`, `列出某个项目下的 Codex 会话`, `列出 Claude 会话`, `切换到 Claude 会话` | handoff |
 | `reconfigure`, `修改配置`, `帮我改一下 token`, `换个 bot` | reconfigure |
 | `doctor`, `diagnose`, `诊断`, `挂了`, `没反应了`, `bot 没反应`, `出问题了` | doctor |
 
@@ -160,7 +160,13 @@ Run: `bash "SKILL_DIR/scripts/daemon.sh" logs N`
 
 ### `handoff`
 
-Use this to list configured project directories, inspect recent Codex threads under one project, or rebind a Weixin chat so future messages continue on a selected Codex thread.
+Use this to list configured project directories, inspect recent threads/sessions, or rebind a Weixin chat so future messages continue on a selected session.
+
+There are two flavours: **Codex handoff** (existing) and **Claude Code handoff** (new).
+
+---
+
+#### Codex handoff
 
 Supported forms:
 
@@ -175,7 +181,7 @@ Interpretation rules:
 - `handoff projects` lists entries from `~/.claude-to-im/projects.json`
 - `handoff threads <project-id> [limit]` lists local Codex threads whose normalized `cwd` exactly matches the configured project `cwd`
 - `handoff weixin` uses the current `CODEX_THREAD_ID`
-- `handoff weixin <thread-id>` uses the explicit thread id
+- `handoff weixin <thread-id>` uses the explicit Codex thread id
 - `handoff weixin <thread-id> <binding-id-prefix>` uses the explicit thread id and selects the target Weixin binding by binding id prefix when multiple chats exist
 
 Run these commands:
@@ -189,15 +195,49 @@ Run these commands:
   - `bash "SKILL_DIR/scripts/handoff.sh" weixin "<thread-id>"`
   - `bash "SKILL_DIR/scripts/handoff.sh" weixin "<thread-id>" "<binding-id-prefix>"`
 
-Key behavior to explain to the user:
+---
 
-- `~/.claude-to-im/projects.json` must exist for `handoff projects` / `handoff threads`; if missing, show the example emitted by the helper and stop
+#### Claude Code handoff
+
+Supported forms:
+
+- `handoff claude projects`
+- `handoff claude sessions <project-id> [limit]`
+- `handoff claude`
+- `handoff claude <session-id>`
+- `handoff claude <session-id> <binding-id-prefix>`
+
+Interpretation rules:
+
+- `handoff claude projects` lists entries from `~/.claude-to-im/projects.json`
+- `handoff claude sessions <project-id> [limit]` lists recent Claude Code sessions whose `cwd` exactly matches the configured project `cwd`; reads from `~/.claude/usage-data/session-meta/` and `~/.claude/projects/`
+- `handoff claude` attempts to auto-detect the current Claude session ID using (in priority order): `CLAUDE_SESSION_ID` env var → `CMUX_CLAUDE_PID` env var → `~/.claude/sessions/<PID>.json` entries matching the current cwd. If detection is ambiguous or impossible, it errors with instructions to use `handoff claude sessions` + explicit session id instead.
+- `handoff claude <session-id>` binds the specified Claude session to the (single) Weixin chat
+- `handoff claude <session-id> <binding-id-prefix>` selects by binding id prefix when multiple Weixin chats exist
+
+Run these commands:
+
+- Projects list:
+  - `node "SKILL_DIR/scripts/claude-handoff.mjs" projects`
+- Sessions list:
+  - `node "SKILL_DIR/scripts/claude-handoff.mjs" sessions "<project-id>" "<limit>"`
+- Claude Weixin handoff:
+  - `bash "SKILL_DIR/scripts/handoff.sh" claude`
+  - `bash "SKILL_DIR/scripts/handoff.sh" claude "<session-id>"`
+  - `bash "SKILL_DIR/scripts/handoff.sh" claude "<session-id>" "<binding-id-prefix>"`
+
+**⚠️ Claude resume limitations (v1):** The resumed Claude session in the bridge does NOT inherit: `--settings`, `--permission-mode`, sandbox flags, or extra allowed directories (`--add-dir`) from the original Claude Code window. The bridge uses only what its own `config.env` provides (`CTI_DEFAULT_MODE`, `CTI_ENV_ISOLATION`, `CTI_AUTO_APPROVE`, etc.). Tell the user clearly: "The resumed session may have different tool permissions and allowed-directory access than your original Claude Code window."
+
+---
+
+Key behavior that applies to **both** Codex and Claude handoff:
+
+- `~/.claude-to-im/projects.json` must exist for `handoff projects` / `handoff threads` / `handoff claude sessions`; if missing, show the example emitted by the helper and stop
 - when exactly one Weixin binding exists, it is auto-selected
 - when multiple Weixin bindings exist, do not guess; show the helper output and ask the user to retry with a binding id prefix
 - if no Weixin binding exists yet, tell the user to send at least one message from the target Weixin chat first so the bridge can create the binding
-- the helper creates a brand-new bridge session and points the selected binding to the target Codex thread; it does not delete old sessions or message history
+- the helper creates a brand-new bridge session and points the selected binding to the target thread/session; it does not delete old sessions or message history
 - the helper clears the binding/session model pin by default to avoid resume failures caused by model mismatch
-- the helper resolves the working directory from local Codex session metadata when available; otherwise it falls back to the current shell `pwd`
 - `scripts/handoff.sh` restarts the bridge only if it was already running, because bindings are loaded on startup
 - restarting the bridge drops any pending permission requests; call this out explicitly
 - handoff only affects future messages from Weixin; it does not migrate the reply that is already in progress

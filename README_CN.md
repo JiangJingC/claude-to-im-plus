@@ -235,13 +235,18 @@ start bridge
 | `/claude-to-im handoff projects` | "handoff projects" | 列出已配置的项目目录 |
 | `/claude-to-im handoff threads skill` | "handoff threads skill" | 列出某个项目下最近的 Codex thread |
 | `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | 把当前 `CODEX_THREAD_ID` 接到微信继续 |
-| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | 把指定 thread 接到指定微信聊天 |
+| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | 把指定 Codex thread 接到指定微信聊天 |
+| `/claude-to-im handoff claude projects` | "handoff claude projects" | 列出已配置的项目目录（Claude） |
+| `/claude-to-im handoff claude sessions skill` | "handoff claude sessions skill" | 列出某个项目下最近的 Claude Code 会话 |
+| `/claude-to-im handoff claude` | "把当前 Claude 会话切到微信" | 自动检测当前 Claude 会话并接到微信 |
+| `/claude-to-im handoff claude <session-id>` | "handoff claude 20e42788-..." | 把指定 Claude 会话接到微信 |
+| `/claude-to-im handoff claude <session-id> <binding-prefix>` | "handoff claude 20e4... 3fe039c5" | 把指定 Claude 会话接到指定微信聊天 |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | 交互式修改配置 |
 | `/claude-to-im doctor` | "doctor" / "诊断" | 诊断问题 |
 
-## 切到微信继续聊
+## 切到微信继续聊（Codex）
 
-`handoff` 解决的是“我离开电脑后，想从微信继续当前 Codex 会话”这个场景。它会把某个微信聊天重新绑定到指定的 Codex thread，让下一条微信消息直接续上那条上下文。
+`handoff` 解决的是”我离开电脑后，想从微信继续当前 Codex 会话”这个场景。它会把某个微信聊天重新绑定到指定的 Codex thread，让下一条微信消息直接续上那条上下文。
 
 ### 1. 配置项目目录
 
@@ -276,7 +281,7 @@ start bridge
 
 helper 会读取本地 Codex 历史 `~/.codex/session_index.jsonl` 和 `~/.codex/sessions/**/*.jsonl`，然后列出 `session_meta.cwd` 与项目 `cwd` 严格匹配的最近 thread。
 
-### 3. 接到微信
+### 3. 接到微信（Codex）
 
 当前桌面会话的快速路径：
 
@@ -304,7 +309,61 @@ helper 会读取本地 Codex 历史 `~/.codex/session_index.jsonl` 和 `~/.codex
 - handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
 - 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
 - 重启 bridge 会丢掉当前待处理的权限请求
-- handoff 只影响后续微信消息，不会把“当前正在生成中的这一轮回复”迁过去
+- handoff 只影响后续微信消息，不会把”当前正在生成中的这一轮回复”迁过去
+
+---
+
+## Claude Code 会话切到微信继续聊
+
+`handoff claude` 解决的是”我离开电脑后，想从微信继续当前 Claude Code 会话”这个场景。原理与 Codex handoff 一致，但读取的是 `~/.claude/` 下的会话数据。
+
+### 1. 配置项目目录（同上，复用同一份 projects.json）
+
+### 2. 列出 Claude Code 会话
+
+```text
+/claude-to-im handoff claude projects
+/claude-to-im handoff claude sessions skill
+```
+
+helper 会读取：
+- `~/.claude/usage-data/session-meta/<uuid>.json` — 会话开始时间和首条提示
+- `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` — 含 cwd 和时间戳的完整对话
+
+### 3. 接到微信（Claude Code）
+
+自动检测当前会话（依次尝试 `CLAUDE_SESSION_ID` 环境变量 → `CMUX_CLAUDE_PID` 环境变量 → `~/.claude/sessions/<PID>.json`）：
+
+```text
+/claude-to-im handoff claude
+```
+
+显式指定 session id：
+
+```text
+/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c
+```
+
+多个微信聊天时带上 binding id 前缀：
+
+```text
+/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
+```
+
+### ⚠️ Claude 续接限制（v1）
+
+桥接侧重启后的 Claude 会话**不会**继承原始 Claude Code 窗口的以下设置：
+
+| 不会继承的内容 | 说明 |
+|---|---|
+| `--settings` / hooks | 桥接用自己的守护进程环境 |
+| `--permission-mode` / `--dangerously-skip-permissions` | 桥接使用标准权限模型（`/perm` 确认） |
+| sandbox 标志 | 不传递 |
+| 额外允许目录（`--add-dir`） | 不传递 |
+
+实际影响：如果原始会话开启了 `bypassPermissions` 或自定义了 `allowedTools`，桥接侧**不会**继承。resumed 会话会走桥接的权限审批流程（微信 `/perm` 命令或 `1/2/3` 快捷回复）。
+
+**请勿对用户暗示”已完全继承桌面端权限”。**
 
 ## 平台配置指南
 

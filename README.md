@@ -235,7 +235,12 @@ All commands are run inside Claude Code or Codex:
 | `/claude-to-im handoff projects` | "handoff projects" | List configured project directories |
 | `/claude-to-im handoff threads skill` | "handoff threads skill" | List recent Codex threads under one project |
 | `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | Handoff the current `CODEX_THREAD_ID` to Weixin |
-| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | Handoff an explicit thread to a specific Weixin chat |
+| `/claude-to-im handoff weixin <thread-id> <binding-prefix>` | "handoff weixin 019d... 3fe039c5" | Handoff an explicit Codex thread to a specific Weixin chat |
+| `/claude-to-im handoff claude projects` | "handoff claude projects" | List configured project directories (Claude) |
+| `/claude-to-im handoff claude sessions skill` | "handoff claude sessions skill" | List recent Claude Code sessions under one project |
+| `/claude-to-im handoff claude` | "把当前 Claude 会话切到微信" | Auto-detect current Claude session and bind to Weixin |
+| `/claude-to-im handoff claude <session-id>` | "handoff claude 20e42788-..." | Handoff explicit Claude session to Weixin |
+| `/claude-to-im handoff claude <session-id> <binding-prefix>` | "handoff claude 20e4... 3fe039c5" | Handoff explicit Claude session to a specific Weixin chat |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | Update config interactively |
 | `/claude-to-im doctor` | "doctor" / "诊断" | Diagnose issues |
 
@@ -265,7 +270,7 @@ Rules:
 - `cwd` must be absolute
 - matching is strict after normalization, so `/repo` matches `/repo` but not `/repo/subdir`
 
-### 2. Inspect projects and threads
+### 2. Inspect projects and threads (Codex)
 
 Inside Claude Code or Codex:
 
@@ -276,7 +281,7 @@ Inside Claude Code or Codex:
 
 The helper reads local Codex history from `~/.codex/session_index.jsonl` and `~/.codex/sessions/**/*.jsonl`, then shows recent threads whose `session_meta.cwd` exactly matches the configured project `cwd`.
 
-### 3. Handoff to Weixin
+### 3. Handoff to Weixin (Codex)
 
 Fast path for the current desktop session:
 
@@ -305,6 +310,65 @@ Notes:
 - the bridge restarts only when it was already running, because bindings are loaded at startup
 - restarting the bridge drops any pending permission requests
 - handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
+
+---
+
+## Claude Code Session Handoff to Weixin
+
+`handoff claude` is for the "continue this Claude Code session from WeChat" workflow. It works like Codex handoff, but reads session data from `~/.claude/` instead of `~/.codex/`.
+
+### 1. Configure project directories (same as above)
+
+Re-use the same `~/.claude-to-im/projects.json` you created for Codex handoff.
+
+### 2. Inspect projects and sessions (Claude Code)
+
+```text
+/claude-to-im handoff claude projects
+/claude-to-im handoff claude sessions skill
+```
+
+Session data is read from:
+- `~/.claude/usage-data/session-meta/<uuid>.json` — session start time and first prompt
+- `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl` — full conversation with cwd and timestamps
+
+### 3. Handoff to Weixin (Claude Code)
+
+Auto-detect the current Claude Code session (tries `CLAUDE_SESSION_ID` env → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`):
+
+```text
+/claude-to-im handoff claude
+```
+
+Explicit session id:
+
+```text
+/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c
+```
+
+With binding prefix (multiple Weixin chats):
+
+```text
+/claude-to-im handoff claude 20e42788-f795-4756-8463-61c111a8de2c 3fe039c5
+```
+
+### ⚠️ Claude resume limitations (v1)
+
+The resumed Claude session inside the bridge daemon does **NOT** fully inherit the environment of your original Claude Code window.
+
+What is propagated:
+- The Claude session UUID (used with `--resume` flag)
+- The working directory (resolved from local session history)
+
+What is **NOT** propagated:
+- `--settings` / hook configurations
+- `--permission-mode` / `--dangerously-skip-permissions`
+- Sandbox flags
+- Extra allowed directories (`--add-dir`)
+
+The resumed session uses only what the bridge's own `config.env` provides: `CTI_DEFAULT_MODE`, `CTI_ENV_ISOLATION`, `CTI_AUTO_APPROVE`, etc.
+
+**Practical impact:** If your original session had `bypassPermissions` or a custom `allowedTools` list, the bridge session will NOT. It will use the bridge's standard permission model (including the IM `/perm` approval flow). Do not assume "fully inherits desktop permissions".
 
 ## Platform Setup Guides
 
@@ -395,7 +459,8 @@ Additional notes:
 | `src/logger.ts` | Secret-redacted file logging with rotation |
 | `scripts/daemon.sh` | Process management (start/stop/status/logs) |
 | `scripts/handoff.sh` | Handoff wrapper: stop → rebind → restart → status |
-| `scripts/codex-handoff.mjs` | Pure Node helper for projects, thread listing, and binding updates |
+| `scripts/codex-handoff.mjs` | Pure Node helper for projects, Codex thread listing, and binding updates |
+| `scripts/claude-handoff.mjs` | Pure Node helper for Claude Code session listing and binding updates |
 | `scripts/doctor.sh` | Health checks |
 | `SKILL.md` | Claude Code skill definition |
 
