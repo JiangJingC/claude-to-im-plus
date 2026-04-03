@@ -6,8 +6,10 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { execSync } from 'node:child_process';
-import { query, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage, PermissionResult } from '@anthropic-ai/claude-agent-sdk';
 import type { LLMProvider, StreamChatParams, FileAttachment } from 'claude-to-im/src/lib/bridge/host.js';
 import type { PendingPermissions } from './permission-gateway.js';
@@ -83,6 +85,115 @@ const NON_CLAUDE_MODEL_RE = /^(gpt-|o[1-9][-_]|codex[-_]|davinci|text-|openai\/)
 /** Return true if a model name clearly belongs to a non-Claude provider. */
 export function isNonClaudeModel(model?: string): boolean {
   return !!model && NON_CLAUDE_MODEL_RE.test(model);
+}
+
+type ConversationLeaf = {
+  uuid: string;
+  type: 'user' | 'assistant';
+  timestampMs: number;
+  index: number;
+};
+
+/**
+ * Match Claude Code's project-dir slugging so we read the same session JSONL
+ * files that the CLI writes under ~/.claude/projects/<sanitized-cwd>/.
+ */
+export function sanitizeClaudeProjectPath(projectDir: string): string {
+  const normalized = projectDir.normalize('NFC');
+  const canonical = (() => {
+    try {
+      return fs.realpathSync.native(normalized).normalize('NFC');
+    } catch {
+      return path.resolve(normalized).normalize('NFC');
+    }
+  })();
+  return canonical.replace(/[^a-zA-Z0-9]/g, '-');
+}
+
+/** @internal Exported for testing. */
+export function getClaudeSessionJsonlPath(
+  sessionId: string,
+  workingDir: string,
+  homeDir = os.homedir(),
+): string {
+  return path.join(
+    homeDir,
+    '.claude',
+    'projects',
+    sanitizeClaudeProjectPath(workingDir),
+    `${sessionId}.jsonl`,
+  );
+}
+
+/** @internal Exported for testing. */
+export function findNewestConversationLeaf(
+  sessionId: string,
+  workingDir: string,
+  homeDir = os.homedir(),
+): ConversationLeaf | undefined {
+  const jsonlPath = getClaudeSessionJsonlPath(sessionId, workingDir, homeDir);
+  if (!fs.existsSync(jsonlPath)) return undefined;
+
+  const lines = fs.readFileSync(jsonlPath, 'utf-8').split('\n');
+  const messages: ConversationLeaf[] = [];
+  const parentUuids = new Set<string>();
+
+  for (const [index, line] of lines.entries()) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line) as {
+        uuid?: unknown;
+        parentUuid?: unknown;
+        type?: unknown;
+        timestamp?: unknown;
+      };
+      if (parsed.parentUuid && typeof parsed.parentUuid === 'string') {
+        parentUuids.add(parsed.parentUuid);
+      }
+      if ((parsed.type !== 'user' && parsed.type !== 'assistant') || typeof parsed.uuid !== 'string') {
+        continue;
+      }
+
+      const timestampMs =
+        typeof parsed.timestamp === 'string' ? Date.parse(parsed.timestamp) : Number.NaN;
+      messages.push({
+        uuid: parsed.uuid,
+        type: parsed.type,
+        timestampMs: Number.isFinite(timestampMs) ? timestampMs : Number.NEGATIVE_INFINITY,
+        index,
+      });
+    } catch {
+      // Ignore malformed JSONL rows and keep scanning for the latest valid leaf.
+    }
+  }
+
+  const leaves = messages.filter((message) => !parentUuids.has(message.uuid));
+  if (leaves.length === 0) return undefined;
+
+  leaves.sort((a, b) => {
+    if (b.timestampMs !== a.timestampMs) return b.timestampMs - a.timestampMs;
+    return b.index - a.index;
+  });
+  return leaves[0];
+}
+
+/** @internal Exported for testing. */
+export function resolveResumeSessionAtLeaf(
+  sessionId: string | undefined,
+  workingDir: string | undefined,
+  cachedLeafUuid?: string,
+  homeDir = os.homedir(),
+): string | undefined {
+  if (!sessionId || !workingDir) return cachedLeafUuid;
+
+  const newestLeaf = findNewestConversationLeaf(sessionId, workingDir, homeDir);
+  if (!newestLeaf) return cachedLeafUuid;
+
+  // If the newest branch currently ends on a user turn, resuming at an older
+  // assistant would trim away that pending user message. In that case, let the
+  // CLI resume from its natural head instead of forcing resumeSessionAt.
+  if (newestLeaf.type === 'user') return undefined;
+  return newestLeaf.uuid;
 }
 
 /**
@@ -462,19 +573,18 @@ export class SDKLLMProvider implements LLMProvider {
             }
 
             // Resolve the leaf UUID for resumeSessionAt to prevent DAG forks.
-            // Warm path: use the stored leafUuid from the previous turn (zero latency).
-            // Cold start: call getSessionMessages() to find the current chain leaf.
+            // Prefer the newest user/assistant leaf from the persisted JSONL so
+            // we do not rewind past newer local CLI turns after a handoff.
             let resolvedLeafUuid: string | undefined = params.leafUuid;
-            if (!resolvedLeafUuid && params.sdkSessionId) {
+            if (params.sdkSessionId && params.workingDirectory) {
               try {
-                const msgs = await getSessionMessages(params.sdkSessionId, {
-                  dir: params.workingDirectory,
-                });
-                // Last assistant message in the rebuilt chain = current leaf
-                const lastAssistant = [...msgs].reverse().find(m => m.type === 'assistant');
-                resolvedLeafUuid = lastAssistant?.uuid;
+                resolvedLeafUuid = resolveResumeSessionAtLeaf(
+                  params.sdkSessionId,
+                  params.workingDirectory,
+                  params.leafUuid,
+                );
               } catch (err) {
-                console.warn('[llm-provider] getSessionMessages failed, skipping resumeSessionAt:', err);
+                console.warn('[llm-provider] resolveResumeSessionAtLeaf failed, skipping resumeSessionAt:', err);
               }
             }
 

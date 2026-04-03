@@ -1,5 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import {
   isAuthError,
@@ -7,6 +10,8 @@ import {
   isNonClaudeModel,
   parseCliMajorVersion,
   handleMessage,
+  findNewestConversationLeaf,
+  resolveResumeSessionAtLeaf,
 } from '../llm-provider.js';
 import type { StreamState } from '../llm-provider.js';
 import { sseEvent } from '../sse-utils.js';
@@ -27,6 +32,22 @@ function makeFakeController() {
 
 function freshState(): StreamState {
   return { hasReceivedResult: false, hasStreamedText: false, lastAssistantText: '' };
+}
+
+function writeClaudeSessionJsonl(
+  homeDir: string,
+  workingDir: string,
+  sessionId: string,
+  entries: Array<Record<string, unknown>>,
+) {
+  const sanitized = fs.realpathSync.native(workingDir).normalize('NFC').replace(/[^a-zA-Z0-9]/g, '-');
+  const projectDir = path.join(homeDir, '.claude', 'projects', sanitized);
+  fs.mkdirSync(projectDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(projectDir, `${sessionId}.jsonl`),
+    `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`,
+    'utf-8',
+  );
 }
 
 // ── classifyAuthError ──
@@ -173,6 +194,82 @@ describe('parseCliMajorVersion', () => {
   it('returns undefined for non-version strings', () => {
     assert.equal(parseCliMajorVersion('unknown'), undefined);
     assert.equal(parseCliMajorVersion(''), undefined);
+  });
+});
+
+describe('resumeSessionAt leaf resolution', () => {
+  it('selects the newest assistant leaf from the persisted JSONL', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-leaf-home-'));
+    const workingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-leaf-work-'));
+    const sessionId = 'session-assistant-leaf';
+
+    writeClaudeSessionJsonl(homeDir, workingDir, sessionId, [
+      {
+        uuid: 'assistant-root',
+        type: 'assistant',
+        timestamp: '2026-04-03T01:40:05.000Z',
+      },
+      {
+        uuid: 'sdk-user',
+        parentUuid: 'assistant-root',
+        type: 'user',
+        timestamp: '2026-04-03T01:42:15.000Z',
+      },
+      {
+        uuid: 'sdk-assistant',
+        parentUuid: 'sdk-user',
+        type: 'assistant',
+        timestamp: '2026-04-03T01:42:21.000Z',
+      },
+    ]);
+
+    const newestLeaf = findNewestConversationLeaf(sessionId, workingDir, homeDir);
+    assert.deepEqual(
+      newestLeaf && { uuid: newestLeaf.uuid, type: newestLeaf.type },
+      { uuid: 'sdk-assistant', type: 'assistant' },
+    );
+    assert.equal(resolveResumeSessionAtLeaf(sessionId, workingDir, undefined, homeDir), 'sdk-assistant');
+  });
+
+  it('returns undefined when the newest leaf is a user turn', () => {
+    const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-user-leaf-home-'));
+    const workingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-user-leaf-work-'));
+    const sessionId = 'session-user-leaf';
+
+    writeClaudeSessionJsonl(homeDir, workingDir, sessionId, [
+      {
+        uuid: 'assistant-root',
+        type: 'assistant',
+        timestamp: '2026-04-03T01:40:05.000Z',
+      },
+      {
+        uuid: 'sdk-user',
+        parentUuid: 'assistant-root',
+        type: 'user',
+        timestamp: '2026-04-03T01:42:15.000Z',
+      },
+      {
+        uuid: 'later-cli-user',
+        parentUuid: 'assistant-root',
+        type: 'user',
+        timestamp: '2026-04-03T01:44:35.000Z',
+      },
+    ]);
+
+    const newestLeaf = findNewestConversationLeaf(sessionId, workingDir, homeDir);
+    assert.deepEqual(
+      newestLeaf && { uuid: newestLeaf.uuid, type: newestLeaf.type },
+      { uuid: 'later-cli-user', type: 'user' },
+    );
+    assert.equal(resolveResumeSessionAtLeaf(sessionId, workingDir, 'stale-sdk-leaf', homeDir), undefined);
+  });
+
+  it('falls back to the cached leaf when the JSONL does not exist', () => {
+    const workingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-missing-work-'));
+    assert.equal(
+      resolveResumeSessionAtLeaf('missing-session', workingDir, 'cached-leaf', fs.mkdtempSync(path.join(os.tmpdir(), 'cti-missing-home-'))),
+      'cached-leaf',
+    );
   });
 });
 
