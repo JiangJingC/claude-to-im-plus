@@ -1,8 +1,10 @@
-# Claude-to-IM Skill
+# Claude-to-IM Plus
 
 Bridge Claude Code / Codex to IM platforms — chat with AI coding agents from Telegram, Discord, Feishu/Lark, QQ, WeChat, or DingTalk.
 
 [中文文档](README_CN.md)
+
+> Maintained fork of `op7418/Claude-to-IM-skill` for the Claude-to-IM Plus distribution. Upstream remains the source for future syncs; this repo carries the Plus-specific bridge features and operational fixes.
 
 > **Want a desktop GUI instead?** Check out [CodePilot](https://github.com/op7418/CodePilot) — a full-featured desktop app with visual chat interface, session management, file tree preview, permission controls, and more. This skill was extracted from CodePilot's IM bridge module for users who prefer a lightweight, CLI-only setup.
 
@@ -49,7 +51,7 @@ Choose the section that matches the AI agent product you actually use.
 #### Recommended: `npx skills`
 
 ```bash
-npx skills add op7418/Claude-to-IM-skill
+npx skills add YOUR_GITHUB/claude-to-im-plus
 ```
 
 After installation, tell Claude Code:
@@ -67,7 +69,7 @@ If you want WeChat specifically, you can also say:
 #### Alternative: clone directly into Claude Code skills
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/.claude/skills/claude-to-im
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.claude/skills/claude-to-im
 ```
 
 Claude Code discovers it automatically.
@@ -75,9 +77,9 @@ Claude Code discovers it automatically.
 #### Alternative: symlink for development
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/code/Claude-to-IM-skill
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
 mkdir -p ~/.claude/skills
-ln -s ~/code/Claude-to-IM-skill ~/.claude/skills/claude-to-im
+ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 ```
 
 ### Codex
@@ -85,14 +87,14 @@ ln -s ~/code/Claude-to-IM-skill ~/.claude/skills/claude-to-im
 #### Recommended: use the Codex install script
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/code/Claude-to-IM-skill
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
 For local development with a live checkout:
 
 ```bash
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh --link
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh --link
 ```
 
 The install script places the skill under `~/.codex/skills/claude-to-im`, installs dependencies, and builds the daemon.
@@ -112,7 +114,7 @@ If you want WeChat specifically, you can also say:
 #### Alternative: clone directly into Codex skills
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/.codex/skills/claude-to-im
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.codex/skills/claude-to-im
 cd ~/.codex/skills/claude-to-im
 npm install
 npm run build
@@ -133,7 +135,7 @@ Choose the update flow that matches both your AI agent product and your installa
 If you installed with `npx skills`, re-run:
 
 ```bash
-npx skills add op7418/Claude-to-IM-skill
+npx skills add YOUR_GITHUB/claude-to-im-plus
 ```
 
 If you installed via `git clone` or symlink:
@@ -158,7 +160,7 @@ If you installed with the Codex install script in copy mode:
 
 ```bash
 rm -rf ~/.codex/skills/claude-to-im
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
 If you installed with `--link` or cloned directly into the Codex skills directory:

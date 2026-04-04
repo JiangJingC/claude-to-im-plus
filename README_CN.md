@@ -1,8 +1,10 @@
-# Claude-to-IM Skill
+# Claude-to-IM Plus
 
 将 Claude Code / Codex 桥接到 IM 平台 —— 在 Telegram、Discord、飞书、QQ、微信或钉钉中与 AI 编程代理对话。
 
 [English](README.md)
+
+> 这是基于 `op7418/Claude-to-IM-skill` 维护的增强分支，用于 Claude-to-IM Plus 发行版。后续仍可从上游同步，当前仓库承载 Plus 的桥接能力和运维修复。
 
 > **想要桌面图形界面？** 试试 [CodePilot](https://github.com/op7418/CodePilot) —— 一个功能完整的桌面应用，提供可视化聊天界面、会话管理、文件树预览、权限控制等。本 Skill 从 CodePilot 的 IM 桥接模块中提取而来，适合偏好轻量级纯 CLI 方案的用户。
 
@@ -49,7 +51,7 @@ Claude Code / Codex → 读写你的代码库
 #### 推荐：`npx skills`
 
 ```bash
-npx skills add op7418/Claude-to-IM-skill
+npx skills add YOUR_GITHUB/claude-to-im-plus
 ```
 
 安装完成后，直接对 Claude Code 说：
@@ -67,7 +69,7 @@ npx skills add op7418/Claude-to-IM-skill
 #### 备选：直接克隆到 Claude Code Skills 目录
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/.claude/skills/claude-to-im
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.claude/skills/claude-to-im
 ```
 
 Claude Code 会自动发现。
@@ -75,9 +77,9 @@ Claude Code 会自动发现。
 #### 备选：符号链接方式（适合开发）
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/code/Claude-to-IM-skill
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
 mkdir -p ~/.claude/skills
-ln -s ~/code/Claude-to-IM-skill ~/.claude/skills/claude-to-im
+ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 ```
 
 ### Codex
@@ -85,14 +87,14 @@ ln -s ~/code/Claude-to-IM-skill ~/.claude/skills/claude-to-im
 #### 推荐：使用 Codex 安装脚本
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/code/Claude-to-IM-skill
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
 如果你想保留可开发的本地仓库：
 
 ```bash
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh --link
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh --link
 ```
 
 安装脚本会把 Skill 放到 `~/.codex/skills/claude-to-im`，并自动安装依赖、构建 daemon。
@@ -112,7 +114,7 @@ claude-to-im setup
 #### 备选：直接克隆到 Codex skills 目录
 
 ```bash
-git clone https://github.com/op7418/Claude-to-IM-skill.git ~/.codex/skills/claude-to-im
+git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.codex/skills/claude-to-im
 cd ~/.codex/skills/claude-to-im
 npm install
 npm run build
@@ -133,7 +135,7 @@ npm run build
 如果你是通过 `npx skills` 安装的，直接重新执行：
 
 ```bash
-npx skills add op7418/Claude-to-IM-skill
+npx skills add YOUR_GITHUB/claude-to-im-plus
 ```
 
 如果你是通过 `git clone` 或符号链接安装的：
@@ -158,7 +160,7 @@ npm run build
 
 ```bash
 rm -rf ~/.codex/skills/claude-to-im
-bash ~/code/Claude-to-IM-skill/scripts/install-codex.sh
+bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
 如果你是用 `--link` 模式，或者直接克隆到 Codex skills 目录：

@@ -120,7 +120,7 @@ function projectConfigExample() {
     '  "projects": [',
     '    {',
     '      "id": "skill",',
-    '      "name": "Claude-to-IM Skill",',
+    '      "name": "Claude-to-IM Plus",',
     '      "cwd": "/absolute/path/to/project"',
     '    }',
     '  ]',
