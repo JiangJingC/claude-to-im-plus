@@ -407,6 +407,32 @@ if [ -f "$CONFIG_FILE" ]; then
       check "Weixin linked account store (missing — run 'cd $SKILL_DIR && npm run weixin:login')" 1
     fi
   fi
+
+  # --- DingTalk ---
+  if echo "$CTI_CHANNELS" | grep -q dingtalk; then
+    DT_APP_KEY=$(get_config CTI_DINGTALK_APP_KEY)
+    DT_APP_SECRET=$(get_config CTI_DINGTALK_APP_SECRET)
+    if [ -n "$DT_APP_KEY" ] && [ -n "$DT_APP_SECRET" ]; then
+      DT_TOKEN_RESULT=$(curl -s --max-time 10 -X POST "https://api.dingtalk.com/v1.0/oauth2/accessToken" \
+        -H "Content-Type: application/json" \
+        -d "{\"appKey\":\"${DT_APP_KEY}\",\"appSecret\":\"${DT_APP_SECRET}\"}" 2>/dev/null || echo '{}')
+      DT_ACCESS_TOKEN=$(echo "$DT_TOKEN_RESULT" | sed -n 's/.*"accessToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+      if [ -n "$DT_ACCESS_TOKEN" ]; then
+        check "DingTalk app credentials are valid (access token obtained)" 0
+      else
+        check "DingTalk app credentials are valid (oauth2/accessToken failed)" 1
+      fi
+    else
+      check "DingTalk app credentials configured" 1
+    fi
+
+    DT_SDK_DIR="$SKILL_DIR/node_modules/dingtalk-stream"
+    if [ -d "$DT_SDK_DIR" ]; then
+      check "dingtalk-stream SDK installed" 0
+    else
+      check "dingtalk-stream SDK installed (run 'cd $SKILL_DIR && npm install')" 1
+    fi
+  fi
 fi
 
 # --- Log directory writable ---
@@ -451,6 +477,7 @@ if [ "$FAIL" -gt 0 ]; then
   echo "  dist/daemon.mjs stale → cd $SKILL_DIR && npm run build"
   echo "  config.env missing    → run setup wizard"
   echo "  Weixin linked account missing→ cd $SKILL_DIR && npm run weixin:login"
+  echo "  DingTalk auth failed        → check CTI_DINGTALK_APP_KEY / CTI_DINGTALK_APP_SECRET"
   echo "  Stale PID file        → run stop, then start"
 fi
 

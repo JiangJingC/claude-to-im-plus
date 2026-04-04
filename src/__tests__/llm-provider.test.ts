@@ -12,6 +12,8 @@ import {
   handleMessage,
   findNewestConversationLeaf,
   resolveResumeSessionAtLeaf,
+  getResumeSessionAtOption,
+  getSdkClaudeExecutableOverride,
 } from '../llm-provider.js';
 import type { StreamState } from '../llm-provider.js';
 import { sseEvent } from '../sse-utils.js';
@@ -270,6 +272,46 @@ describe('resumeSessionAt leaf resolution', () => {
       resolveResumeSessionAtLeaf('missing-session', workingDir, 'cached-leaf', fs.mkdtempSync(path.join(os.tmpdir(), 'cti-missing-home-'))),
       'cached-leaf',
     );
+  });
+
+  it('does not pass resumeSessionAt when sdkSessionId is missing', () => {
+    assert.equal(getResumeSessionAtOption(undefined, 'leaf-123'), undefined);
+    assert.equal(getResumeSessionAtOption('', 'leaf-123'), undefined);
+  });
+
+  it('passes resumeSessionAt only when sdkSessionId exists', () => {
+    assert.equal(getResumeSessionAtOption('session-123', 'leaf-123'), 'leaf-123');
+    assert.equal(getResumeSessionAtOption('session-123', undefined), undefined);
+  });
+});
+
+describe('getSdkClaudeExecutableOverride', () => {
+  it('uses the native Claude binary in SDK queries by default', () => {
+    const original = process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE;
+    delete process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE;
+    try {
+      assert.equal(
+        getSdkClaudeExecutableOverride('/Users/fightshadow/.local/bin/claude'),
+        '/Users/fightshadow/.local/bin/claude',
+      );
+    } finally {
+      if (original === undefined) delete process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE;
+      else process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE = original;
+    }
+  });
+
+  it('allows an explicit internal override to use the SDK bundled launcher instead', () => {
+    const original = process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE;
+    process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE = 'false';
+    try {
+      assert.equal(
+        getSdkClaudeExecutableOverride('/Users/fightshadow/.local/bin/claude'),
+        undefined,
+      );
+    } finally {
+      if (original === undefined) delete process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE;
+      else process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE = original;
+    }
   });
 });
 

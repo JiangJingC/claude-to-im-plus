@@ -12,16 +12,17 @@ usage() {
   cat <<'EOF'
 Usage:
   bash scripts/handoff.sh weixin
+  bash scripts/handoff.sh dingtalk
 EOF
 }
 
 removed_command_error() {
   local command_name="$1"
-  echo "The handoff command '$command_name' has been removed. Use 'handoff weixin' from the current Codex or Claude Code session." >&2
+  echo "The handoff command '$command_name' has been removed. Use 'handoff weixin' or 'handoff dingtalk' from the current Codex or Claude Code session." >&2
 }
 
 explicit_selection_removed_error() {
-  echo "Explicit session/thread selection has been removed. Run 'handoff weixin' from the current Codex or Claude Code session." >&2
+  echo "Explicit session/thread selection has been removed. Run 'handoff <channel>' from the current Codex or Claude Code session." >&2
 }
 
 daemon_is_running() {
@@ -178,12 +179,13 @@ detect_current_runtime() {
     return 0
   fi
 
-  echo "Cannot detect the current Codex or Claude Code session. Run 'handoff weixin' from an active conversation." >&2
+  echo "Cannot detect the current Codex or Claude Code session. Run 'handoff weixin' or 'handoff dingtalk' from an active conversation." >&2
   return 1
 }
 
 case "${1:-help}" in
-  weixin)
+  weixin|dingtalk)
+    channel="$1"
     shift
     if [ $# -gt 0 ]; then
       explicit_selection_removed_error
@@ -193,10 +195,10 @@ case "${1:-help}" in
     runtime="$(detect_current_runtime)" || exit 1
     case "$runtime" in
       codex)
-        run_handoff_with_restart codex "Codex handoff" node "$HELPER" bind --channel weixin
+        run_handoff_with_restart codex "Codex handoff ($channel)" node "$HELPER" bind --channel "$channel"
         ;;
       claude)
-        run_handoff_with_restart claude "Claude handoff" node "$CLAUDE_HELPER" bind --channel weixin
+        run_handoff_with_restart claude "Claude handoff ($channel)" node "$CLAUDE_HELPER" bind --channel "$channel"
         ;;
       *)
         echo "Unsupported detected runtime: $runtime" >&2

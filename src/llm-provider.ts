@@ -196,6 +196,27 @@ export function resolveResumeSessionAtLeaf(
   return newestLeaf.uuid;
 }
 
+/** `resumeSessionAt` is only valid when the SDK is also resuming an existing session. */
+export function getResumeSessionAtOption(
+  sdkSessionId: string | undefined,
+  leafUuid: string | undefined,
+): string | undefined {
+  if (!sdkSessionId) return undefined;
+  return leafUuid;
+}
+
+/**
+ * Default to the resolved native Claude Code executable so runtime behavior
+ * stays aligned with the original project model and preflight checks.
+ *
+ * Keep an explicit escape hatch to fall back to the SDK's bundled launcher
+ * (`cli.js`) if a future environment hits a native-binary regression again.
+ */
+export function getSdkClaudeExecutableOverride(cliPath: string | undefined): string | undefined {
+  if (!cliPath) return undefined;
+  return process.env.CTI_CLAUDE_SDK_USE_NATIVE_EXECUTABLE === 'false' ? undefined : cliPath;
+}
+
 /**
  * Build a clean env for the CLI subprocess.
  *
@@ -588,11 +609,13 @@ export class SDKLLMProvider implements LLMProvider {
               }
             }
 
+            const resumeSessionAt = getResumeSessionAtOption(params.sdkSessionId, resolvedLeafUuid);
+
             const queryOptions: Record<string, unknown> = {
               cwd: params.workingDirectory,
               model,
               resume: params.sdkSessionId || undefined,
-              ...(resolvedLeafUuid ? { resumeSessionAt: resolvedLeafUuid } : {}),
+              ...(resumeSessionAt ? { resumeSessionAt } : {}),
               abortController: params.abortController,
               permissionMode: (params.permissionMode as 'default' | 'acceptEdits' | 'plan') || undefined,
               includePartialMessages: true,
@@ -636,8 +659,9 @@ export class SDKLLMProvider implements LLMProvider {
                   };
                 },
             };
-            if (cliPath) {
-              queryOptions.pathToClaudeCodeExecutable = cliPath;
+            const sdkExecutableOverride = getSdkClaudeExecutableOverride(cliPath);
+            if (sdkExecutableOverride) {
+              queryOptions.pathToClaudeCodeExecutable = sdkExecutableOverride;
             }
 
             const prompt = buildPrompt(params.prompt, params.files);

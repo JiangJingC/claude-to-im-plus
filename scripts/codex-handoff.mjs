@@ -333,7 +333,7 @@ function selectBinding(channelType, bindingPrefix) {
       .map(({ value }) => `- ${value.id} | ${value.chatId}`)
       .join('\n');
     throw new Error(
-      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target Weixin chat right now.\n${details}`,
+      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target ${channelType} chat right now.\n${details}`,
     );
   }
 
@@ -367,8 +367,8 @@ function resolveWorkingDirectory(threadId, overrideCwd) {
 
 export function bindThreadToChannel(options = {}) {
   const channel = options.channel || 'weixin';
-  if (channel !== 'weixin') {
-    throw new Error(`Unsupported channel "${channel}". v1 handoff only supports weixin.`);
+  if (!['weixin', 'dingtalk'].includes(channel)) {
+    throw new Error(`Unsupported channel "${channel}". v1 handoff only supports weixin or dingtalk.`);
   }
 
   const threadId = options.threadId || process.env.CODEX_THREAD_ID;
@@ -515,7 +515,7 @@ function usage() {
     'Usage:',
     '  node scripts/codex-handoff.mjs projects [--json]',
     '  node scripts/codex-handoff.mjs threads <project-id> [limit] [--json]',
-    '  node scripts/codex-handoff.mjs bind --channel weixin [--thread-id <id>] [--binding <binding-id-prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
+    '  node scripts/codex-handoff.mjs bind --channel <weixin|dingtalk> [--thread-id <id>] [--binding <binding-id-prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
   ].join('\n');
 }
 

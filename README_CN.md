@@ -1,6 +1,6 @@
 # Claude-to-IM Skill
 
-将 Claude Code / Codex 桥接到 IM 平台 —— 在 Telegram、Discord、飞书、QQ 或微信中与 AI 编程代理对话。
+将 Claude Code / Codex 桥接到 IM 平台 —— 在 Telegram、Discord、飞书、QQ、微信或钉钉中与 AI 编程代理对话。
 
 [English](README.md)
 
@@ -13,7 +13,7 @@
 本 Skill 运行一个后台守护进程，将你的 IM 机器人连接到 Claude Code 或 Codex 会话。来自 IM 的消息被转发给 AI 编程代理，响应（包括工具调用、权限请求、流式预览）会发回到聊天中。
 
 ```
-你 (Telegram/Discord/飞书/QQ/微信)
+你 (Telegram/Discord/飞书/QQ/微信/钉钉)
   ↕ Bot API
 后台守护进程 (Node.js)
   ↕ Claude Agent SDK 或 Codex SDK（通过 CTI_RUNTIME 配置）
@@ -22,9 +22,9 @@ Claude Code / Codex → 读写你的代码库
 
 ## 功能特点
 
-- **五大 IM 平台** — Telegram、Discord、飞书、QQ、微信，可任意组合启用
+- **六大 IM 平台** — Telegram、Discord、飞书、QQ、微信、钉钉，可任意组合启用
 - **交互式配置** — 引导式向导逐步收集 token，附带详细获取说明
-- **权限控制** — 工具调用需要在聊天中通过内联按钮（Telegram/Discord）或文本 `/perm` 命令 / 快捷 `1/2/3` 回复（飞书/QQ/微信）明确批准
+- **权限控制** — 工具调用需要在聊天中通过内联按钮（Telegram/Discord）或文本 `/perm` 命令 / 快捷 `1/2/3` 回复（飞书/QQ/微信/钉钉）明确批准
 - **流式预览** — 实时查看 Claude 的输出（Telegram 和 Discord 支持）
 - **会话持久化** — 对话在守护进程重启后保留
 - **密钥保护** — token 以 `chmod 600` 存储，日志中自动脱敏
@@ -195,7 +195,7 @@ claude-to-im setup
 
 向导会引导你完成以下步骤：
 
-1. **选择渠道** — 选择 Telegram、Discord、飞书、QQ、微信，或任意组合
+1. **选择渠道** — 选择 Telegram、Discord、飞书、QQ、微信、钉钉，或任意组合
 2. **输入凭据** — 向导会详细说明如何获取每个 token、需要开启哪些设置、授予哪些权限
 3. **设置默认值** — 工作目录、模型、模式
 4. **验证** — 立即通过平台 API 验证 token 有效性
@@ -235,23 +235,26 @@ start bridge
 | `/claude-to-im logs` | "查看日志" | 查看最近 50 行日志 |
 | `/claude-to-im logs 200` | "logs 200" | 查看最近 200 行日志 |
 | `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | 自动识别当前 Codex 或 Claude Code 会话并接到微信 |
+| `/claude-to-im handoff dingtalk` | "handoff dingtalk" / "把当前会话切到钉钉" | 自动识别当前 Codex 或 Claude Code 会话并接到钉钉 |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | 交互式修改配置 |
 | `/claude-to-im doctor` | "doctor" / "诊断" | 诊断问题 |
 
-## 切到微信继续聊
+## 切到微信 / 钉钉继续聊
 
-`handoff weixin` 现在只做一件事：把**当前**桌面会话切到微信继续聊。
+`handoff weixin` 和 `handoff dingtalk` 现在只做一件事：把**当前**桌面会话切到目标聊天渠道继续聊。
 
 在 Codex 里执行：
 
 ```text
 claude-to-im handoff weixin
+claude-to-im handoff dingtalk
 ```
 
 在 Claude Code 里执行：
 
 ```text
 /claude-to-im handoff weixin
+/claude-to-im handoff dingtalk
 ```
 
 自动识别顺序：
@@ -261,18 +264,18 @@ claude-to-im handoff weixin
 
 当前版本的行为边界：
 
-- 只支持“当前会话 -> 微信”这一条主流程
+- 只支持“当前会话 -> 目标渠道”这一条主流程
 - 不再支持显式传 `<thread-id>` 或 `<session-id>`
 - 不再提供列项目、列 thread、列 session 的公开命令
-- 只有一个微信 binding 时会自动选中
-- 如果还没有微信 binding，先让目标微信聊天给 bot 发过至少一条消息
-- 如果存在多个微信 binding，会直接报错；当前简化版不做自动选择
+- 目标渠道只有一个 binding 时会自动选中
+- 如果还没有目标渠道 binding，先让目标聊天给 bot 发过至少一条消息
+- 如果存在多个目标渠道 binding，会直接报错；当前简化版不做自动选择
 - handoff 会自动把全局 `CTI_RUNTIME` 切到当前检测到的 runtime（`codex` 或 `claude`）
 - 这个 runtime 切换是全局的，不是按聊天隔离；重启后所有启用中的 channel / binding 都会一起使用同一个 runtime
 - handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
 - 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
 - 重启 bridge 会丢掉当前待处理的权限请求
-- handoff 只影响后续微信消息，不会把当前正在生成中的回复迁过去
+- handoff 只影响后续目标渠道消息，不会把当前正在生成中的回复迁过去
 
 ### ⚠️ Claude 续接限制（v1）
 
@@ -351,6 +354,22 @@ claude-to-im handoff weixin
 - 语音消息只使用微信自带的语音转文字结果
 - 如果微信没有提供 `voice_item.text`，桥会直接报错，不会自行下载或转写原始语音
 - 权限确认使用文本 `/perm ...` 命令或快捷 `1/2/3` 回复
+
+### DingTalk / 钉钉
+
+> 钉钉 v1 使用 Stream 模式，支持私聊和群聊，但回复只做纯文本。群聊里只有 `@机器人` 或回复机器人的消息才会进入 bridge。
+
+1. 创建钉钉企业内部应用，并启用 **机器人** + **Stream 模式**
+2. 获取应用的 **AppKey** 和 **AppSecret**
+3. 在 `~/.claude-to-im/config.env` 中设置 `CTI_DINGTALK_APP_KEY` 和 `CTI_DINGTALK_APP_SECRET`
+4. 把 `dingtalk` 加入 `CTI_ENABLED_CHANNELS`
+5. 重启 bridge
+
+补充说明：
+
+- bridge 使用官方 `dingtalk-stream` SDK
+- 回复通过钉钉每个会话携带的 `sessionWebhook` 发送，并缓存到 `~/.claude-to-im/data/`
+- v1 不包含卡片、按钮、图片/文件入站和流式预览
 
 ## 架构
 

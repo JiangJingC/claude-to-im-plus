@@ -33,6 +33,9 @@ export interface Config {
   weixinBaseUrl?: string;
   weixinCdnBaseUrl?: string;
   weixinMediaEnabled?: boolean;
+  // DingTalk
+  dingtalkAppKey?: string;
+  dingtalkAppSecret?: string;
   // Auto-approve all tool permission requests without user confirmation
   autoApprove?: boolean;
 }
@@ -127,6 +130,8 @@ export function loadConfig(): Config {
     weixinMediaEnabled: env.has("CTI_WEIXIN_MEDIA_ENABLED")
       ? env.get("CTI_WEIXIN_MEDIA_ENABLED") === "true"
       : undefined,
+    dingtalkAppKey: env.get("CTI_DINGTALK_APP_KEY") || undefined,
+    dingtalkAppSecret: env.get("CTI_DINGTALK_APP_SECRET") || undefined,
     autoApprove: env.get("CTI_AUTO_APPROVE") === "true",
   };
 }
@@ -187,6 +192,8 @@ export function saveConfig(config: Config): void {
   out += formatEnvLine("CTI_WEIXIN_CDN_BASE_URL", config.weixinCdnBaseUrl);
   if (config.weixinMediaEnabled !== undefined)
     out += formatEnvLine("CTI_WEIXIN_MEDIA_ENABLED", String(config.weixinMediaEnabled));
+  out += formatEnvLine("CTI_DINGTALK_APP_KEY", config.dingtalkAppKey);
+  out += formatEnvLine("CTI_DINGTALK_APP_SECRET", config.dingtalkAppSecret);
 
   fs.mkdirSync(CTI_HOME, { recursive: true });
   const tmpPath = CONFIG_PATH + ".tmp";
@@ -296,12 +303,25 @@ export function configToSettings(config: Config): Map<string, string> {
   if (config.weixinCdnBaseUrl)
     m.set("bridge_weixin_cdn_base_url", config.weixinCdnBaseUrl);
 
+  // ── DingTalk ──
+  m.set(
+    "bridge_dingtalk_enabled",
+    config.enabledChannels.includes("dingtalk") ? "true" : "false"
+  );
+  if (config.dingtalkAppKey)
+    m.set("bridge_dingtalk_app_key", config.dingtalkAppKey);
+  if (config.dingtalkAppSecret)
+    m.set("bridge_dingtalk_app_secret", config.dingtalkAppSecret);
+
   // ── Defaults ──
   // Upstream keys: bridge_default_work_dir, bridge_default_model, default_model
   m.set("bridge_default_work_dir", config.defaultWorkDir);
   if (shouldExportDefaultModel(config)) {
-    m.set("bridge_default_model", config.defaultModel);
-    m.set("default_model", config.defaultModel);
+    const defaultModel = config.defaultModel;
+    if (defaultModel) {
+      m.set("bridge_default_model", defaultModel);
+      m.set("default_model", defaultModel);
+    }
   }
   m.set("bridge_default_mode", config.defaultMode);
 

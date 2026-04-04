@@ -174,6 +174,39 @@ esac
     assert.match(result.stderr, /Global runtime already set to: codex/);
   });
 
+  it('restarts the bridge around a successful Codex dingtalk handoff', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-123',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-thread-id',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['dingtalk'], {
+      CODEX_THREAD_ID: 'thread-1',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
+    assert.deepEqual(calls, ['status', 'stop', 'start', 'status']);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'thread-1');
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+  });
+
   it('does not auto-start the bridge if it was not already running', () => {
     const result = run(['weixin'], {
       CODEX_THREAD_ID: 'thread-1',
@@ -204,6 +237,36 @@ esac
     assert.match(result.stderr, /Global runtime switched: codex -> claude/);
   });
 
+  it('auto-detects the current Claude session for dingtalk handoff', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-123',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-session',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+    fs.writeFileSync(stateFile, 'running', 'utf8');
+
+    const result = run(['dingtalk'], {
+      CLAUDE_SESSION_ID: 'env-detected-session',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'env-detected-session');
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
+  });
+
   it('auto-detects the current Claude session via CMUX_CLAUDE_PID', () => {
     const fakePid = '42424';
     writeJson(path.join(claudeHome, 'sessions', `${fakePid}.json`), {
@@ -225,7 +288,7 @@ esac
   });
 
   it('errors with a clear message when the current session cannot be detected', () => {
-    const result = run(['weixin'], {
+    const result = run(['dingtalk'], {
       CLAUDE_SESSION_ID: '',
       CMUX_CLAUDE_PID: '',
     });

@@ -11,8 +11,9 @@
     "test": "CTI_HOME=$(mktemp -d) node --test --test-concurrency=1 --import tsx --test-timeout=15000 src/__tests__/*.test.ts"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.2.62",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.92",
     "claude-to-im": "file:../Claude-to-IM",
+    "dingtalk-stream": "^2.1.6-beta.1",
     "esbuild": "^0.25.0",
     "qrcode": "^1.5.4",
     "tsx": "^4.21.0"

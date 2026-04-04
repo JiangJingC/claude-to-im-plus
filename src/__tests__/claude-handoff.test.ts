@@ -402,6 +402,45 @@ describe('claude-handoff helper', () => {
     assert.equal(sessions[payload.newCodepilotSessionId].model, '');
   });
 
+  it('bind: updates a dingtalk binding when bind --channel dingtalk is used', () => {
+    seedClaudeSession({
+      sessionId: 'session-ding',
+      cwd: '/tmp/workspace/project-a',
+      updatedAt: '2026-04-01T12:00:00.000Z',
+      startTime: '2026-04-01T11:00:00.000Z',
+      firstPrompt: 'DingTalk handoff test',
+    });
+
+    seedBindingData({
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-123',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-claude-session',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'claude-5',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+
+    const result = run(['bind', '--channel', 'dingtalk', '--session-id', 'session-ding', '--json']);
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.bindingId, 'binding-ddd111');
+    assert.equal(payload.channelType, 'dingtalk');
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'session-ding');
+    assert.equal(bindings['dingtalk:chat-a'].workingDirectory, '/tmp/workspace/project-a');
+  });
+
   it('bind: falls back to process.cwd when session has no cwd metadata', () => {
     seedBindingData({
       'weixin:chat-a': {

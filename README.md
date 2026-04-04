@@ -1,6 +1,6 @@
 # Claude-to-IM Skill
 
-Bridge Claude Code / Codex to IM platforms — chat with AI coding agents from Telegram, Discord, Feishu/Lark, QQ, or WeChat.
+Bridge Claude Code / Codex to IM platforms — chat with AI coding agents from Telegram, Discord, Feishu/Lark, QQ, WeChat, or DingTalk.
 
 [中文文档](README_CN.md)
 
@@ -13,7 +13,7 @@ Bridge Claude Code / Codex to IM platforms — chat with AI coding agents from T
 This skill runs a background daemon that connects your IM bots to Claude Code or Codex sessions. Messages from IM are forwarded to the AI coding agent, and responses (including tool use, permission requests, streaming previews) are sent back to your chat.
 
 ```
-You (Telegram/Discord/Feishu/QQ/WeChat)
+You (Telegram/Discord/Feishu/QQ/WeChat/DingTalk)
   ↕ Bot API
 Background Daemon (Node.js)
   ↕ Claude Agent SDK or Codex SDK (configurable via CTI_RUNTIME)
@@ -22,9 +22,9 @@ Claude Code / Codex → reads/writes your codebase
 
 ## Features
 
-- **Five IM platforms** — Telegram, Discord, Feishu/Lark, QQ, WeChat — enable any combination
+- **Six IM platforms** — Telegram, Discord, Feishu/Lark, QQ, WeChat, DingTalk — enable any combination
 - **Interactive setup** — guided wizard collects tokens with step-by-step instructions
-- **Permission control** — tool calls require explicit approval via inline buttons (Telegram/Discord) or text `/perm` commands / quick `1/2/3` replies (Feishu/QQ/WeChat)
+- **Permission control** — tool calls require explicit approval via inline buttons (Telegram/Discord) or text `/perm` commands / quick `1/2/3` replies (Feishu/QQ/WeChat/DingTalk)
 - **Streaming preview** — see Claude's response as it types (Telegram & Discord)
 - **Session persistence** — conversations survive daemon restarts
 - **Secret protection** — tokens stored with `chmod 600`, auto-redacted in all logs
@@ -195,7 +195,7 @@ claude-to-im setup
 
 The wizard will guide you through:
 
-1. **Choose channels** — pick Telegram, Discord, Feishu, QQ, WeChat, or any combination
+1. **Choose channels** — pick Telegram, Discord, Feishu, QQ, WeChat, DingTalk, or any combination
 2. **Enter credentials** — the wizard explains exactly where to get each token, which settings to enable, and what permissions to grant
 3. **Set defaults** — working directory, model, and mode
 4. **Validate** — tokens are verified against platform APIs immediately
@@ -235,23 +235,26 @@ All commands are run inside Claude Code or Codex:
 | `/claude-to-im logs` | "查看日志" | Show last 50 log lines |
 | `/claude-to-im logs 200` | "logs 200" | Show last 200 log lines |
 | `/claude-to-im handoff weixin` | "handoff weixin" / "把当前会话切到微信" | Auto-detect the current Codex or Claude Code session and hand it off to Weixin |
+| `/claude-to-im handoff dingtalk` | "handoff dingtalk" / "把当前会话切到钉钉" | Auto-detect the current Codex or Claude Code session and hand it off to DingTalk |
 | `/claude-to-im reconfigure` | "reconfigure" / "修改配置" | Update config interactively |
 | `/claude-to-im doctor` | "doctor" / "诊断" | Diagnose issues |
 
-## Handoff to Weixin
+## Handoff to Weixin / DingTalk
 
-`handoff weixin` now does exactly one thing: hand off the **current** desktop session to Weixin.
+`handoff weixin` and `handoff dingtalk` now do exactly one thing: hand off the **current** desktop session to the target chat channel.
 
 In Codex:
 
 ```text
 claude-to-im handoff weixin
+claude-to-im handoff dingtalk
 ```
 
 In Claude Code:
 
 ```text
 /claude-to-im handoff weixin
+/claude-to-im handoff dingtalk
 ```
 
 Detection order:
@@ -261,18 +264,18 @@ Detection order:
 
 Current behavior and limits:
 
-- Only the “current session -> Weixin” flow is supported
+- Only the “current session -> target channel” flow is supported
 - Explicit `<thread-id>` / `<session-id>` handoff is no longer supported
 - Public project/thread/session listing commands were removed
-- If exactly one Weixin binding exists, it is selected automatically
-- If no Weixin binding exists yet, send one message from the target Weixin chat first
-- If multiple Weixin bindings exist, the command fails; this simplified flow does not auto-pick a target chat
+- If exactly one binding exists for the target channel, it is selected automatically
+- If no binding exists yet, send one message from the target chat first
+- If multiple bindings exist for the target channel, the command fails; this simplified flow does not auto-pick a target chat
 - Handoff auto-switches the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)
 - This runtime switch is global, not per-chat: all enabled channels/bindings use the same runtime after restart
 - Handoff creates a new local bridge session and keeps old sessions/message files for auditability
 - The bridge restarts only when it was already running, because bindings are loaded at startup
 - Restarting the bridge drops any pending permission requests
-- Handoff only affects future Weixin messages; it does not move the reply that is already streaming right now
+- Handoff only affects future messages for that channel; it does not move the reply that is already streaming right now
 
 ### ⚠️ Claude resume limitations (v1)
 
@@ -353,6 +356,21 @@ Additional notes:
 - `CTI_WEIXIN_MEDIA_ENABLED` controls inbound image/file/video downloads only
 - Voice messages only use WeChat's own built-in speech-to-text text
 - If WeChat does not provide `voice_item.text`, the bridge replies with an error instead of downloading/transcribing raw voice audio
+
+### DingTalk
+
+> DingTalk currently uses Stream mode, supports private chats and group chats, and replies with plain text only in v1. Group chats only process `@bot` messages or replies to the bot.
+
+1. Create a DingTalk internal app with **Bot** + **Stream mode** enabled
+2. Get the app's **AppKey** and **AppSecret**
+3. Set `CTI_DINGTALK_APP_KEY` and `CTI_DINGTALK_APP_SECRET` in `~/.claude-to-im/config.env`
+4. Add `dingtalk` to `CTI_ENABLED_CHANNELS`
+5. Restart the bridge
+
+Notes:
+- The bridge uses the official `dingtalk-stream` SDK
+- Replies are sent through DingTalk's per-chat `sessionWebhook`, which is cached under `~/.claude-to-im/data/`
+- v1 does not implement cards, buttons, image/file ingestion, or streaming preview
 - Permission approvals use text `/perm ...` commands or quick `1/2/3` replies
 
 ## Architecture

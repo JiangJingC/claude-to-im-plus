@@ -140,6 +140,18 @@ describe('configToSettings', () => {
     assert.equal(m.get('bridge_weixin_media_enabled'), 'true');
   });
 
+  it('maps dingtalk settings', () => {
+    const m = configToSettings({
+      ...base,
+      enabledChannels: ['dingtalk'],
+      dingtalkAppKey: 'ding-app-key',
+      dingtalkAppSecret: 'ding-app-secret',
+    });
+    assert.equal(m.get('bridge_dingtalk_enabled'), 'true');
+    assert.equal(m.get('bridge_dingtalk_app_key'), 'ding-app-key');
+    assert.equal(m.get('bridge_dingtalk_app_secret'), 'ding-app-secret');
+  });
+
   it('omits qq image settings when not set', () => {
     const m = configToSettings({
       ...base,
@@ -220,5 +232,6 @@ describe('loadConfig/saveConfig round-trip', () => {
     assert.equal(m.get('bridge_feishu_enabled'), 'false');
     assert.equal(m.get('bridge_qq_enabled'), 'false');
     assert.equal(m.get('bridge_weixin_enabled'), 'false');
+    assert.equal(m.get('bridge_dingtalk_enabled'), 'false');
   });
 });

@@ -3,7 +3,7 @@
  * claude-handoff.mjs — Claude Code session handoff helper for claude-to-im
  *
  * Reads Claude Code session data from ~/.claude/ and bridges a selected session
- * to a WeChat binding in ~/.claude-to-im/.
+ * to a supported IM binding in ~/.claude-to-im/.
  *
  * Claude resume / settings limitations (v1):
  *   - Only the session UUID is passed to the bridge.  The bridge resumes it via
@@ -494,14 +494,14 @@ export function getCurrentSessionOrThrow() {
   if (!current) {
     throw new Error(
       'Cannot detect the current Claude Code session.\n' +
-      'Run "handoff weixin" from an active Claude Code conversation.',
+      'Run "handoff weixin" or "handoff dingtalk" from an active Claude Code conversation.',
     );
   }
 
   if (current.ambiguous) {
     throw new Error(
       `Multiple Claude Code sessions were found in ${current.cwd || process.cwd()}.\n` +
-      'Close the extra Claude Code windows in the same directory, then run "handoff weixin" again from the target conversation.',
+      'Close the extra Claude Code windows in the same directory, then run the handoff command again from the target conversation.',
     );
   }
 
@@ -542,7 +542,7 @@ function selectBinding(channelType, bindingPrefix) {
       .map(({ value }) => `- ${value.id} | ${value.chatId}`)
       .join('\n');
     throw new Error(
-      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target Weixin chat right now.\n${details}`,
+      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target ${channelType} chat right now.\n${details}`,
     );
   }
 
@@ -577,11 +577,11 @@ function resolveWorkingDirectory(sessionId, overrideCwd) {
 }
 
 /**
- * Bind a Claude session to a WeChat binding.
+ * Bind a Claude session to a supported IM binding.
  *
  * Behaviour:
  * - Creates a new bridge session UUID (does NOT reuse or delete the old one).
- * - Updates bindings.json to point the selected WeChat binding at the new
+ * - Updates bindings.json to point the selected binding at the new
  *   bridge session + Claude session ID.
  * - Clears the model pin by default (clearModel = true when not explicitly set)
  *   to avoid resume failures caused by model mismatch.
@@ -593,8 +593,8 @@ function resolveWorkingDirectory(sessionId, overrideCwd) {
  */
 export function bindSessionToChannel(options = {}) {
   const channel = options.channel || 'weixin';
-  if (channel !== 'weixin') {
-    throw new Error(`Unsupported channel "${channel}". v1 handoff only supports weixin.`);
+  if (!['weixin', 'dingtalk'].includes(channel)) {
+    throw new Error(`Unsupported channel "${channel}". v1 handoff only supports weixin or dingtalk.`);
   }
 
   let sessionId = options.sessionId || '';
@@ -713,7 +713,7 @@ function usage() {
     '  node scripts/claude-handoff.mjs projects [--json]',
     '  node scripts/claude-handoff.mjs sessions <project-id> [limit] [--json]',
     '  node scripts/claude-handoff.mjs current [--json]',
-    '  node scripts/claude-handoff.mjs bind --channel weixin [--session-id <id>] [--binding <prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
+    '  node scripts/claude-handoff.mjs bind --channel <weixin|dingtalk> [--session-id <id>] [--binding <prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
   ].join('\n');
 }
 

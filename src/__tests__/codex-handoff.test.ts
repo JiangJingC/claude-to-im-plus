@@ -271,6 +271,38 @@ describe('codex-handoff helper', () => {
     assert.equal(sessions[payload.newCodepilotSessionId].model, '');
   });
 
+  it('updates a dingtalk binding when bind --channel dingtalk is used', () => {
+    seedThreadData();
+    seedBindingData({
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-123',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-thread-id',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+
+    const result = run(['bind', '--channel', 'dingtalk', '--thread-id', 'thread-1', '--json']);
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.bindingId, 'binding-ddd111');
+    assert.equal(payload.channelType, 'dingtalk');
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'thread-1');
+    assert.equal(bindings['dingtalk:chat-a'].workingDirectory, '/tmp/workspace/project-a');
+  });
+
   it('falls back to CODEX_THREAD_ID when thread-id is omitted', () => {
     seedBindingData({
       'weixin:chat-a': {

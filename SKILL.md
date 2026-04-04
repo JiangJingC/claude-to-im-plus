@@ -1,7 +1,7 @@
 ---
 name: claude-to-im
 description: |
-  Bridge THIS Claude Code or Codex session to Telegram, Discord, Feishu/Lark, QQ, or WeChat so the
+  Bridge THIS Claude Code or Codex session to Telegram, Discord, Feishu/Lark, QQ, WeChat, or DingTalk so the
   user can chat with Claude from their phone. Use for: setting up, starting, stopping,
   or diagnosing the claude-to-im bridge daemon; forwarding Claude replies to a messaging
   app; any phrase like "claude-to-im", "bridge", "消息推送", "消息转发", "桥接",
@@ -9,7 +9,7 @@ description: |
   Subcommands: setup, start, stop, status, logs, handoff, reconfigure, doctor.
   Do NOT use for: building standalone bots, webhook integrations, or coding with IM
   platform SDKs — those are regular programming tasks.
-argument-hint: "setup | start | stop | status | logs [N] | handoff weixin | reconfigure | doctor"
+argument-hint: "setup | start | stop | status | logs [N] | handoff weixin | handoff dingtalk | reconfigure | doctor"
 allowed-tools:
   - Bash
   - Read
@@ -35,12 +35,12 @@ Parse the user's intent from `$ARGUMENTS` into one of these subcommands:
 
 | User says (examples) | Subcommand |
 |---|---|
-| `setup`, `configure`, `配置`, `我想在飞书上用 Claude`, `帮我连接 Telegram`, `帮我接微信` | setup |
+| `setup`, `configure`, `配置`, `我想在飞书上用 Claude`, `帮我连接 Telegram`, `帮我接微信`, `帮我接钉钉` | setup |
 | `start`, `start bridge`, `启动`, `启动桥接` | start |
 | `stop`, `stop bridge`, `停止`, `停止桥接` | stop |
 | `status`, `bridge status`, `状态`, `运行状态`, `怎么看桥接的运行状态` | status |
 | `logs`, `logs 200`, `查看日志`, `查看日志 200` | logs |
-| `handoff weixin`, `把当前会话切到微信`, `把当前 Codex 会话切到微信`, `把当前 Claude 会话切到微信` | handoff |
+| `handoff weixin`, `handoff dingtalk`, `把当前会话切到微信`, `把当前会话切到钉钉`, `把当前 Codex 会话切到微信`, `把当前 Claude 会话切到钉钉` | handoff |
 | `reconfigure`, `修改配置`, `帮我改一下 token`, `换个 bot` | reconfigure |
 | `doctor`, `diagnose`, `诊断`, `挂了`, `没反应了`, `bot 没反应`, `出问题了` | doctor |
 
@@ -78,12 +78,13 @@ When AskUserQuestion IS available, collect input **one field at a time**. After 
 
 **Step 1 — Choose channels**
 
-Ask which channels to enable (telegram, discord, feishu, qq, weixin). Accept comma-separated input. Briefly describe each:
+Ask which channels to enable (telegram, discord, feishu, qq, weixin, dingtalk). Accept comma-separated input. Briefly describe each:
 - **telegram** — Best for personal use. Streaming preview, inline permission buttons.
 - **discord** — Good for team use. Server/channel/user-level access control.
 - **feishu** (Lark) — For Feishu/Lark teams. Streaming cards, tool progress, inline permission buttons.
 - **qq** — QQ C2C private chat only. No inline permission buttons, no streaming preview. Permissions use text `/perm ...` commands.
 - **weixin** — WeChat QR login. Single linked account only; a new login replaces the previous one. No inline permission buttons, no streaming preview. Permissions use text `/perm ...` commands or quick `1/2/3` replies. Voice messages only use WeChat's own speech-to-text text; raw voice audio is not transcribed by the bridge.
+- **dingtalk** — DingTalk Stream mode. Supports private chats and group chats; v1 only handles `@bot` or reply-to-bot messages in groups. Plain text replies only.
 
 **Step 2 — Collect tokens per channel**
 
@@ -112,6 +113,11 @@ For each enabled channel, collect one credential at a time. Tell the user where 
   5. Wait for the helper to report success, then confirm that the linked account was saved locally.
   - Explain briefly: the linked Weixin account is stored in `~/.claude-to-im/data/weixin-accounts.json`. Running the helper again replaces the previously linked account.
   - Explain briefly: `CTI_WEIXIN_MEDIA_ENABLED` only controls inbound image/file/video downloads. For voice messages, the bridge only accepts the text returned by WeChat's built-in speech-to-text. If WeChat does not provide a transcript, the bridge replies with an error instead of downloading/transcribing raw audio.
+- **DingTalk**:
+  1. Ask for DingTalk **App Key**
+  2. Ask for DingTalk **App Secret**
+  3. Tell the user to enable **Bot** + **Stream mode** on the DingTalk internal app
+  4. Explain briefly: group chats only process `@bot` or reply-to-bot messages, and v1 replies are plain text only
 
 **Step 3 — General settings**
 
@@ -160,27 +166,29 @@ Run: `bash "SKILL_DIR/scripts/daemon.sh" logs N`
 
 ### `handoff`
 
-Use this to rebind Weixin so future messages continue on the **current** Codex or Claude Code session.
+Use this to rebind Weixin or DingTalk so future messages continue on the **current** Codex or Claude Code session.
 
-Only one public handoff command is supported:
+Public handoff commands:
 
 - `handoff weixin`
+- `handoff dingtalk`
 
 Run:
 
 - `bash "SKILL_DIR/scripts/handoff.sh" weixin`
+- `bash "SKILL_DIR/scripts/handoff.sh" dingtalk`
 
 Behavior:
 
 - If `CODEX_THREAD_ID` exists, treat the current session as Codex and handoff to that thread
 - Otherwise detect the current Claude Code session using `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`
 - On success, auto-switch the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)
-- If no Weixin binding exists yet, tell the user to send at least one message from the target Weixin chat first
-- If multiple Weixin bindings exist, do not guess; tell the user this simplified handoff only supports a single target Weixin chat right now
+- If no binding exists yet for the target channel, tell the user to send at least one message from the target chat first
+- If multiple bindings exist for the target channel, do not guess; tell the user this simplified handoff only supports a single target chat per channel right now
 - The helper creates a brand-new local bridge session and keeps old sessions/message files
 - The bridge restarts only if it was already running, because bindings are loaded on startup
 - Restarting the bridge drops pending permission requests
-- Handoff affects future Weixin messages only; it does not migrate a reply that is already streaming
+- Handoff affects future messages for that channel only; it does not migrate a reply that is already streaming
 
 Removed commands:
 
@@ -188,7 +196,7 @@ Removed commands:
 - `handoff threads ...`
 - `handoff claude ...`
 
-If the user asks for those, tell them they were removed and to use `handoff weixin` from the current conversation instead.
+If the user asks for those, tell them they were removed and to use `handoff weixin` or `handoff dingtalk` from the current conversation instead.
 
 **⚠️ Claude resume limitations (v1):** The resumed Claude session in the bridge does NOT inherit: `--settings`, `--permission-mode`, sandbox flags, or extra allowed directories (`--add-dir`) from the original Claude Code window. The bridge uses only what its own `config.env` provides (`CTI_DEFAULT_MODE`, `CTI_ENV_ISOLATION`, `CTI_AUTO_APPROVE`, etc.). Tell the user clearly: "The resumed session may have different tool permissions and allowed-directory access than your original Claude Code window."
 
