@@ -6,6 +6,8 @@ Bridge Claude Code / Codex to IM platforms — chat with AI coding agents from T
 
 > Maintained fork of `op7418/Claude-to-IM-skill` for the Claude-to-IM Plus distribution. Upstream remains the source for future syncs; this repo carries the Plus-specific bridge features and operational fixes.
 
+> **Fork origin:** This repository is forked from [op7418/Claude-to-IM-skill](https://github.com/op7418/Claude-to-IM-skill). Its paired core library lives in [JiangJingC/claude-to-im-plus-core](https://github.com/JiangJingC/claude-to-im-plus-core), which is forked from [op7418/Claude-to-IM](https://github.com/op7418/Claude-to-IM).
+
 > **Want a desktop GUI instead?** Check out [CodePilot](https://github.com/op7418/CodePilot) — a full-featured desktop app with visual chat interface, session management, file tree preview, permission controls, and more. This skill was extracted from CodePilot's IM bridge module for users who prefer a lightweight, CLI-only setup.
 
 ---

@@ -6,6 +6,8 @@
 
 > 这是基于 `op7418/Claude-to-IM-skill` 维护的增强分支，用于 Claude-to-IM Plus 发行版。后续仍可从上游同步，当前仓库承载 Plus 的桥接能力和运维修复。
 
+> **Fork 来源说明：** 当前仓库 fork 自 [op7418/Claude-to-IM-skill](https://github.com/op7418/Claude-to-IM-skill)。与之配套的底层核心库是 [JiangJingC/claude-to-im-plus-core](https://github.com/JiangJingC/claude-to-im-plus-core)，它 fork 自 [op7418/Claude-to-IM](https://github.com/op7418/Claude-to-IM)。
+
 > **想要桌面图形界面？** 试试 [CodePilot](https://github.com/op7418/CodePilot) —— 一个功能完整的桌面应用，提供可视化聊天界面、会话管理、文件树预览、权限控制等。本 Skill 从 CodePilot 的 IM 桥接模块中提取而来，适合偏好轻量级纯 CLI 方案的用户。
 
 ---
