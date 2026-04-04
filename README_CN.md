@@ -51,7 +51,7 @@ Claude Code / Codex → 读写你的代码库
 #### 推荐：`npx skills`
 
 ```bash
-npx skills add YOUR_GITHUB/claude-to-im-plus
+npx skills add JiangJingC/claude-to-im-plus
 ```
 
 安装完成后，直接对 Claude Code 说：
@@ -69,7 +69,7 @@ npx skills add YOUR_GITHUB/claude-to-im-plus
 #### 备选：直接克隆到 Claude Code Skills 目录
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.claude/skills/claude-to-im
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/.claude/skills/claude-to-im
 ```
 
 Claude Code 会自动发现。
@@ -77,7 +77,7 @@ Claude Code 会自动发现。
 #### 备选：符号链接方式（适合开发）
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/code/claude-to-im-plus
 mkdir -p ~/.claude/skills
 ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 ```
@@ -87,7 +87,7 @@ ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 #### 推荐：使用 Codex 安装脚本
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/code/claude-to-im-plus
 bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
@@ -114,7 +114,7 @@ claude-to-im setup
 #### 备选：直接克隆到 Codex skills 目录
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.codex/skills/claude-to-im
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/.codex/skills/claude-to-im
 cd ~/.codex/skills/claude-to-im
 npm install
 npm run build
@@ -135,7 +135,7 @@ npm run build
 如果你是通过 `npx skills` 安装的，直接重新执行：
 
 ```bash
-npx skills add YOUR_GITHUB/claude-to-im-plus
+npx skills add JiangJingC/claude-to-im-plus
 ```
 
 如果你是通过 `git clone` 或符号链接安装的：

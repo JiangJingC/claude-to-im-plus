@@ -51,7 +51,7 @@ Choose the section that matches the AI agent product you actually use.
 #### Recommended: `npx skills`
 
 ```bash
-npx skills add YOUR_GITHUB/claude-to-im-plus
+npx skills add JiangJingC/claude-to-im-plus
 ```
 
 After installation, tell Claude Code:
@@ -69,7 +69,7 @@ If you want WeChat specifically, you can also say:
 #### Alternative: clone directly into Claude Code skills
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.claude/skills/claude-to-im
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/.claude/skills/claude-to-im
 ```
 
 Claude Code discovers it automatically.
@@ -77,7 +77,7 @@ Claude Code discovers it automatically.
 #### Alternative: symlink for development
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/code/claude-to-im-plus
 mkdir -p ~/.claude/skills
 ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 ```
@@ -87,7 +87,7 @@ ln -s ~/code/claude-to-im-plus ~/.claude/skills/claude-to-im
 #### Recommended: use the Codex install script
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/code/claude-to-im-plus
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/code/claude-to-im-plus
 bash ~/code/claude-to-im-plus/scripts/install-codex.sh
 ```
 
@@ -114,7 +114,7 @@ If you want WeChat specifically, you can also say:
 #### Alternative: clone directly into Codex skills
 
 ```bash
-git clone https://github.com/YOUR_GITHUB/claude-to-im-plus.git ~/.codex/skills/claude-to-im
+git clone https://github.com/JiangJingC/claude-to-im-plus.git ~/.codex/skills/claude-to-im
 cd ~/.codex/skills/claude-to-im
 npm install
 npm run build
@@ -135,7 +135,7 @@ Choose the update flow that matches both your AI agent product and your installa
 If you installed with `npx skills`, re-run:
 
 ```bash
-npx skills add YOUR_GITHUB/claude-to-im-plus
+npx skills add JiangJingC/claude-to-im-plus
 ```
 
 If you installed via `git clone` or symlink:
