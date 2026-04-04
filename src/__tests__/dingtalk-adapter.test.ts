@@ -150,10 +150,10 @@ describe('dingtalk-adapter', () => {
   });
 
   it('replies with a fixed fallback for unsupported media-only messages', async () => {
-    const webhookCalls: Array<{ sessionWebhook: string; text: string }> = [];
+    const webhookCalls: Array<{ sessionWebhook: string; payload: unknown }> = [];
     const adapter = new DingtalkAdapter({
-      postToWebhook: async (sessionWebhook, text) => {
-        webhookCalls.push({ sessionWebhook, text });
+      postToWebhook: async (sessionWebhook, payload) => {
+        webhookCalls.push({ sessionWebhook, payload });
         return new Response('{}', { status: 200 });
       },
     });
@@ -170,15 +170,18 @@ describe('dingtalk-adapter', () => {
 
     assert.deepEqual(webhookCalls, [{
       sessionWebhook: 'https://hook.example/group',
-      text: '暂不支持图片、视频或文件，请发送文字消息。',
+      payload: {
+        msgtype: 'text',
+        text: { content: '暂不支持图片、视频或文件，请发送文字消息。' },
+      },
     }]);
   });
 
   it('send() uses the cached sessionWebhook for the chat', async () => {
-    const webhookCalls: Array<{ sessionWebhook: string; text: string }> = [];
+    const webhookCalls: Array<{ sessionWebhook: string; payload: unknown }> = [];
     const adapter = new DingtalkAdapter({
-      postToWebhook: async (sessionWebhook, text) => {
-        webhookCalls.push({ sessionWebhook, text });
+      postToWebhook: async (sessionWebhook, payload) => {
+        webhookCalls.push({ sessionWebhook, payload });
         return new Response('{}', { status: 200 });
       },
     });
@@ -205,7 +208,51 @@ describe('dingtalk-adapter', () => {
     assert.equal(result.ok, true);
     assert.deepEqual(webhookCalls, [{
       sessionWebhook: 'https://hook.example/send',
-      text: 'bridge reply',
+      payload: {
+        msgtype: 'text',
+        text: { content: 'bridge reply' },
+      },
+    }]);
+  });
+
+  it('send() uses DingTalk markdown payloads when parseMode is Markdown', async () => {
+    const webhookCalls: Array<{ sessionWebhook: string; payload: unknown }> = [];
+    const adapter = new DingtalkAdapter({
+      postToWebhook: async (sessionWebhook, payload) => {
+        webhookCalls.push({ sessionWebhook, payload });
+        return new Response('{}', { status: 200 });
+      },
+    });
+
+    await adapter.processMessage({
+      msgId: 'msg-cache-markdown',
+      conversationId: 'conv-markdown',
+      conversationType: '1',
+      text: { content: '缓存 markdown webhook' },
+      sessionWebhook: 'https://hook.example/markdown',
+      sessionWebhookExpiredTime: Date.now() + 60_000,
+    });
+    await adapter.consumeOne();
+
+    const result = await adapter.send({
+      address: {
+        channelType: 'dingtalk',
+        chatId: 'conv-markdown',
+      },
+      text: '## 标题\n\n**加粗** `代码`',
+      parseMode: 'Markdown',
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(webhookCalls, [{
+      sessionWebhook: 'https://hook.example/markdown',
+      payload: {
+        msgtype: 'markdown',
+        markdown: {
+          title: '标题',
+          text: '## 标题\n\n**加粗** `代码`',
+        },
+      },
     }]);
   });
 

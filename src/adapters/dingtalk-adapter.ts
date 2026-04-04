@@ -105,9 +105,26 @@ interface DingtalkClientLike {
   disconnect(): void;
 }
 
+interface DingtalkTextWebhookPayload {
+  msgtype: 'text';
+  text: {
+    content: string;
+  };
+}
+
+interface DingtalkMarkdownWebhookPayload {
+  msgtype: 'markdown';
+  markdown: {
+    title: string;
+    text: string;
+  };
+}
+
+type DingtalkWebhookPayload = DingtalkTextWebhookPayload | DingtalkMarkdownWebhookPayload;
+
 interface AdapterDeps {
   createClient?: (config: { appKey: string; appSecret: string }) => DingtalkClientLike;
-  postToWebhook?: (sessionWebhook: string, text: string) => Promise<Response>;
+  postToWebhook?: (sessionWebhook: string, payload: DingtalkWebhookPayload) => Promise<Response>;
 }
 
 function createDefaultClient(config: { appKey: string; appSecret: string }): DingtalkClientLike {
@@ -289,6 +306,50 @@ function stripFormatting(text: string, parseMode?: 'HTML' | 'Markdown' | 'plain'
   return text;
 }
 
+function buildTextWebhookPayload(text: string): DingtalkTextWebhookPayload {
+  return {
+    msgtype: 'text',
+    text: { content: text },
+  };
+}
+
+function deriveMarkdownTitle(text: string): string {
+  const firstNonEmptyLine = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+
+  if (!firstNonEmptyLine) {
+    return 'Claude 回复';
+  }
+
+  const simplified = firstNonEmptyLine
+    .replace(/^#+\s*/, '')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_`~]/g, '')
+    .trim();
+
+  if (!simplified) {
+    return 'Claude 回复';
+  }
+
+  return simplified.length > 80 ? `${simplified.slice(0, 77)}...` : simplified;
+}
+
+function buildWebhookPayload(message: OutboundMessage): DingtalkWebhookPayload {
+  if (message.parseMode === 'Markdown') {
+    return {
+      msgtype: 'markdown',
+      markdown: {
+        title: deriveMarkdownTitle(message.text),
+        text: message.text,
+      },
+    };
+  }
+
+  return buildTextWebhookPayload(stripFormatting(message.text, message.parseMode));
+}
+
 export class DingtalkAdapter extends BaseChannelAdapter {
   readonly channelType: ChannelType = 'dingtalk';
 
@@ -306,14 +367,11 @@ export class DingtalkAdapter extends BaseChannelAdapter {
   constructor(deps: AdapterDeps = {}) {
     super();
     this.createClientImpl = deps.createClient ?? createDefaultClient;
-    this.postToWebhookImpl = deps.postToWebhook ?? ((sessionWebhook, text) =>
+    this.postToWebhookImpl = deps.postToWebhook ?? ((sessionWebhook, payload) =>
       fetch(sessionWebhook, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          msgtype: 'text',
-          text: { content: text },
-        }),
+        body: JSON.stringify(payload),
       }));
   }
 
@@ -386,8 +444,8 @@ export class DingtalkAdapter extends BaseChannelAdapter {
     }
 
     try {
-      const text = stripFormatting(message.text, message.parseMode);
-      const response = await this.postToWebhookImpl(webhook.sessionWebhook, text);
+      const payload = buildWebhookPayload(message);
+      const response = await this.postToWebhookImpl(webhook.sessionWebhook, payload);
       if (!response.ok) {
         const body = await response.text().catch(() => '');
         return {
@@ -467,7 +525,7 @@ export class DingtalkAdapter extends BaseChannelAdapter {
         console.log(
           `[dingtalk-adapter] Replying with unsupported-message fallback for ${msg.msgId}: ${extracted.unsupported.join(',')}`,
         );
-        await this.postToWebhookImpl(msg.sessionWebhook, UNSUPPORTED_MESSAGE_TEXT).catch(() => {});
+        await this.postToWebhookImpl(msg.sessionWebhook, buildTextWebhookPayload(UNSUPPORTED_MESSAGE_TEXT)).catch(() => {});
       }
       console.log(`[dingtalk-adapter] Ignoring empty text after extraction for ${msg.msgId}`);
       return;
