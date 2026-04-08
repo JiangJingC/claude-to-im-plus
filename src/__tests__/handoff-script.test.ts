@@ -248,15 +248,16 @@ esac
     assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
   });
 
-  it('does not auto-start the bridge if it was not already running', () => {
+  it('starts the bridge even if it was not already running', () => {
     const result = run(['weixin'], {
       CODEX_THREAD_ID: 'thread-1',
     });
     assert.equal(result.status, 0, result.stderr);
 
     const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
-    assert.deepEqual(calls, ['status', 'status']);
+    assert.deepEqual(calls, ['status', 'start', 'status']);
     assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+    assert.match(result.stderr, /Starting it now so the new binding is immediately available/);
   });
 
   it('auto-detects the current Claude session via CLAUDE_SESSION_ID', () => {
@@ -451,7 +452,26 @@ esac
     );
     assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'env-detected-session');
     assert.match(result.stderr, /binding was written/i);
-    assert.match(result.stderr, /Bridge restart: failed/);
+    assert.match(result.stderr, /Bridge start: failed/);
+  });
+
+  it('fails handoff when auto-start fails after binding a stopped bridge', () => {
+    const result = run(['weixin'], {
+      CODEX_THREAD_ID: 'thread-1',
+      CTI_TEST_FAIL_START: '1',
+    });
+    assert.equal(result.status, 1);
+
+    const calls = fs.readFileSync(logFile, 'utf8').trim().split('\n');
+    assert.deepEqual(calls, ['status', 'start']);
+    assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'thread-1');
+    assert.match(result.stderr, /binding was written/i);
+    assert.match(result.stderr, /Bridge start: failed/);
   });
 
   it('appends CTI_RUNTIME when it is missing and preserves other config lines', () => {

@@ -278,7 +278,7 @@ claude-to-im handoff dingtalk
 - handoff 会自动把全局 `CTI_RUNTIME` 切到当前检测到的 runtime（`codex` 或 `claude`）
 - 这个 runtime 切换是全局的，不是按聊天隔离；重启后所有启用中的 channel / binding 都会一起使用同一个 runtime
 - handoff 会新建一个本地 bridge session，并保留旧 session / message 文件
-- 只有 bridge 原本就在运行时，才会执行重启，因为 binding 是启动时加载到内存的
+- handoff 写完 binding 后总会自动启动 bridge，这样目标聊天可以立刻继续使用
 - 重启 bridge 会丢掉当前待处理的权限请求
 - handoff 只影响后续目标渠道消息，不会把当前正在生成中的回复迁过去
 

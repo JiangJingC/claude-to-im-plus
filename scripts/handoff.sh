@@ -143,20 +143,22 @@ run_handoff_with_restart() {
   fi
 
   if [ "$was_running" -eq 1 ]; then
-    if ! "$DAEMON_SH" start; then
-      echo "Handoff binding was written for $bind_label, but the bridge failed to restart." >&2
-      echo "Bind written: yes" >&2
-      if [ "$runtime_switched" -eq 1 ]; then
-        echo "Runtime switch applied: yes ($runtime_before_display -> $target_runtime)" >&2
-      else
-        echo "Runtime switch applied: no (already $target_runtime)" >&2
-      fi
-      echo "Bridge restart: failed" >&2
-      echo "Next steps: run 'bash \"$DAEMON_SH\" status', 'bash \"$DAEMON_SH\" logs 100', or 'bash \"$SKILL_DIR/scripts/doctor.sh\"'." >&2
-      return 1
-    fi
+    echo "Starting bridge with the updated binding." >&2
   else
-    echo "Bridge was not running. The new binding is saved, and the next start will use runtime '$target_runtime'." >&2
+    echo "Bridge was not running. Starting it now so the new binding is immediately available." >&2
+  fi
+
+  if ! "$DAEMON_SH" start; then
+    echo "Handoff binding was written for $bind_label, but the bridge failed to start." >&2
+    echo "Bind written: yes" >&2
+    if [ "$runtime_switched" -eq 1 ]; then
+      echo "Runtime switch applied: yes ($runtime_before_display -> $target_runtime)" >&2
+    else
+      echo "Runtime switch applied: no (already $target_runtime)" >&2
+    fi
+    echo "Bridge start: failed" >&2
+    echo "Next steps: run 'bash \"$DAEMON_SH\" status', 'bash \"$DAEMON_SH\" logs 100', or 'bash \"$SKILL_DIR/scripts/doctor.sh\"'." >&2
+    return 1
   fi
 
   "$DAEMON_SH" status

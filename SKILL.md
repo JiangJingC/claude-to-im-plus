@@ -186,7 +186,7 @@ Behavior:
 - If no binding exists yet for the target channel, tell the user to send at least one message from the target chat first
 - If multiple bindings exist for the target channel, do not guess; tell the user this simplified handoff only supports a single target chat per channel right now
 - The helper creates a brand-new local bridge session and keeps old sessions/message files
-- The bridge restarts only if it was already running, because bindings are loaded on startup
+- After writing the binding, handoff always starts the bridge so the new target chat is immediately usable
 - Restarting the bridge drops pending permission requests
 - Handoff affects future messages for that channel only; it does not migrate a reply that is already streaming
 

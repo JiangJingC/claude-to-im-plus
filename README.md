@@ -278,7 +278,7 @@ Current behavior and limits:
 - Handoff auto-switches the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)
 - This runtime switch is global, not per-chat: all enabled channels/bindings use the same runtime after restart
 - Handoff creates a new local bridge session and keeps old sessions/message files for auditability
-- The bridge restarts only when it was already running, because bindings are loaded at startup
+- After writing the binding, handoff always starts the bridge so the target chat is immediately usable
 - Restarting the bridge drops any pending permission requests
 - Handoff only affects future messages for that channel; it does not move the reply that is already streaming right now
 
