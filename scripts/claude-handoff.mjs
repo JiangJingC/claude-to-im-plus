@@ -113,6 +113,17 @@ function compareDescByTimestamp(left, right) {
   return leftTs < rightTs ? 1 : -1;
 }
 
+function normalizeTtyValue(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '?' || trimmed === '??' || trimmed === '-') {
+    return '';
+  }
+  return trimmed;
+}
+
 function projectConfigExample() {
   return [
     'Example ~/.claude-to-im/projects.json:',
@@ -304,10 +315,10 @@ function readClaudeProjectSessions() {
   return sessionById;
 }
 
-function readLiveClaudeSessions() {
-  const sessionById = new Map();
+function readLiveClaudeSessionCandidates() {
+  const candidates = [];
   if (!fileExists(CLAUDE_SESSIONS_DIR)) {
-    return sessionById;
+    return candidates;
   }
 
   for (const entry of fs.readdirSync(CLAUDE_SESSIONS_DIR, { withFileTypes: true })) {
@@ -322,23 +333,131 @@ function readLiveClaudeSessions() {
       const cwd = typeof data?.cwd === 'string' && data.cwd
         ? normalizePathValue(data.cwd)
         : '';
-      const startedAt = typeof data?.startedAt === 'number'
+      const pid = Number(entry.name.slice(0, -('.json'.length)));
+      const liveStartedAt = typeof data?.startedAt === 'number'
         ? new Date(data.startedAt).toISOString()
         : '';
 
-      sessionById.set(sessionId, {
+      candidates.push({
         sessionId,
         cwd,
-        updatedAt: startedAt,
-        startTime: startedAt,
-        summary: '',
+        pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+        liveStartedAt,
       });
     } catch {
       // skip unreadable file
     }
   }
 
+  return candidates;
+}
+
+function readLiveClaudeSessions() {
+  const sessionById = new Map();
+
+  for (const candidate of readLiveClaudeSessionCandidates()) {
+    sessionById.set(candidate.sessionId, {
+      sessionId: candidate.sessionId,
+      cwd: candidate.cwd,
+      updatedAt: candidate.liveStartedAt,
+      startTime: candidate.liveStartedAt,
+      summary: '',
+    });
+  }
+
   return sessionById;
+}
+
+function readProcessSnapshot() {
+  const fixture = process.env.CTI_CLAUDE_HANDOFF_PS_SNAPSHOT;
+  if (fixture) {
+    try {
+      const parsed = JSON.parse(fixture);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((entry) => ({
+            pid: Number(entry?.pid),
+            ppid: Number(entry?.ppid),
+            tty: normalizeTtyValue(entry?.tty),
+            command: typeof entry?.command === 'string' ? entry.command : '',
+          }))
+          .filter((entry) => Number.isInteger(entry.pid) && entry.pid > 0);
+      }
+    } catch {
+      // Ignore malformed fixture and fall back to ps.
+    }
+  }
+
+  try {
+    const raw = execSync('ps -axo pid=,ppid=,tty=,comm=', {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+
+    return raw
+      .split(/\r?\n/)
+      .map((line) => {
+        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.+?)\s*$/);
+        if (!match) return null;
+        return {
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          tty: normalizeTtyValue(match[3]),
+          command: match[4],
+        };
+      })
+      .filter((entry) => entry && Number.isInteger(entry.pid) && entry.pid > 0);
+  } catch {
+    return [];
+  }
+}
+
+function collectAncestorPids(processByPid, startPid) {
+  const ancestors = new Set();
+  const visited = new Set();
+  let currentPid = startPid;
+
+  while (Number.isInteger(currentPid) && currentPid > 0 && !visited.has(currentPid)) {
+    visited.add(currentPid);
+    const current = processByPid.get(currentPid);
+    if (!current || !Number.isInteger(current.ppid) || current.ppid <= 0) {
+      break;
+    }
+    ancestors.add(current.ppid);
+    currentPid = current.ppid;
+  }
+
+  return ancestors;
+}
+
+function compareCurrentSessionCandidates(left, right) {
+  if (left.ancestorMatch !== right.ancestorMatch) {
+    return left.ancestorMatch ? -1 : 1;
+  }
+  if (left.ttyMatch !== right.ttyMatch) {
+    return left.ttyMatch ? -1 : 1;
+  }
+
+  const activity = compareDescByTimestamp(left.updatedAt, right.updatedAt);
+  if (activity !== 0) return activity;
+
+  const start = compareDescByTimestamp(left.startTime, right.startTime);
+  if (start !== 0) return start;
+
+  const liveStart = compareDescByTimestamp(left.liveStartedAt, right.liveStartedAt);
+  if (liveStart !== 0) return liveStart;
+
+  return left.sessionId.localeCompare(right.sessionId);
+}
+
+function hasMeaningfulLead(best, runnerUp) {
+  if (!runnerUp) return true;
+  if (best.ancestorMatch !== runnerUp.ancestorMatch) return true;
+  if (best.ttyMatch !== runnerUp.ttyMatch) return true;
+  if (compareDescByTimestamp(best.updatedAt, runnerUp.updatedAt) !== 0) return true;
+  if (compareDescByTimestamp(best.startTime, runnerUp.startTime) !== 0) return true;
+  if (compareDescByTimestamp(best.liveStartedAt, runnerUp.liveStartedAt) !== 0) return true;
+  return false;
 }
 
 /**
@@ -412,14 +531,15 @@ export function listSessionsForProject(projectId, limit = 20) {
  *  1. CLAUDE_SESSION_ID env var — if the user or a wrapper sets this explicitly
  *  2. CMUX_CLAUDE_PID env var — cmux wrapper sets the parent claude PID; we
  *     look it up in ~/.claude/sessions/<PID>.json
- *  3. Walk ~/.claude/sessions/<PID>.json; pick the entry whose cwd matches
- *     process.cwd() (most specific) or the most recently started entry
+ *  3. Restrict to ~/.claude/sessions/<PID>.json entries whose cwd matches
+ *     process.cwd(), then prefer the current process ancestry / tty match and
+ *     finally the most recently active same-cwd session
  *
  * Returns { sessionId, cwd, pid } or null if not found.
  *
- * IMPORTANT: Strategy 3 is a best-effort heuristic.  If multiple Claude Code
- * windows are open in the same directory, we cannot reliably distinguish them.
- * The function explicitly documents this uncertainty.
+ * IMPORTANT: Strategy 3 is still heuristic, but it never falls back across
+ * project directories. If the current cwd has no live Claude session, we fail
+ * rather than accidentally rebinding to another project.
  */
 export function resolveCurrentSession() {
   // Strategy 1: explicit env var
@@ -444,49 +564,53 @@ export function resolveCurrentSession() {
     }
   }
 
-  // Strategy 3: Walk sessions dir, match by cwd then recency
-  if (!fileExists(CLAUDE_SESSIONS_DIR)) {
+  const currentCwd = normalizePathValue(process.cwd());
+  const liveCandidates = readLiveClaudeSessionCandidates()
+    .filter((candidate) => candidate.cwd === currentCwd);
+  if (liveCandidates.length === 0) {
     return null;
   }
 
-  const currentCwd = normalizePathValue(process.cwd());
-  const candidates = [];
+  const knownSessions = new Map(
+    buildClaudeSessionIndex().map((session) => [session.sessionId, session]),
+  );
+  const processSnapshot = readProcessSnapshot();
+  const processByPid = new Map(processSnapshot.map((entry) => [entry.pid, entry]));
+  const ancestorPids = collectAncestorPids(processByPid, process.pid);
+  const currentTty = normalizeTtyValue(processByPid.get(process.pid)?.tty || '');
 
-  for (const entry of fs.readdirSync(CLAUDE_SESSIONS_DIR, { withFileTypes: true })) {
-    if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
-    const pid = Number(entry.name.slice(0, -('.json'.length)));
-    if (!Number.isInteger(pid) || pid <= 0) continue;
+  const rankedCandidates = liveCandidates.map((candidate) => {
+    const known = knownSessions.get(candidate.sessionId);
+    const candidateTty = normalizeTtyValue(
+      candidate.pid ? processByPid.get(candidate.pid)?.tty || '' : '',
+    );
 
-    const filePath = path.join(CLAUDE_SESSIONS_DIR, entry.name);
-    try {
-      const data = readJsonFile(filePath, null);
-      if (!data?.sessionId) continue;
-      candidates.push({
-        sessionId: data.sessionId,
-        cwd: typeof data.cwd === 'string' ? normalizePathValue(data.cwd) : '',
-        pid,
-        startedAt: typeof data.startedAt === 'number' ? data.startedAt : 0,
-        source: 'sessions_dir',
-      });
-    } catch {
-      // skip
-    }
-  }
+    return {
+      sessionId: candidate.sessionId,
+      cwd: candidate.cwd,
+      pid: candidate.pid,
+      liveStartedAt: candidate.liveStartedAt,
+      updatedAt: known?.updatedAt || candidate.liveStartedAt || '',
+      startTime: known?.startTime || candidate.liveStartedAt || '',
+      ancestorMatch: Boolean(candidate.pid && ancestorPids.has(candidate.pid)),
+      ttyMatch: Boolean(currentTty && candidateTty && currentTty === candidateTty),
+    };
+  });
 
-  if (candidates.length === 0) return null;
+  rankedCandidates.sort(compareCurrentSessionCandidates);
+  const best = rankedCandidates[0];
+  const runnerUp = rankedCandidates[1];
+  const ambiguous = !hasMeaningfulLead(best, runnerUp);
 
-  // Prefer entries whose cwd matches current working directory
-  const cwdMatches = candidates.filter((c) => c.cwd === currentCwd);
-  const pool = cwdMatches.length > 0 ? cwdMatches : candidates;
-
-  // Sort by most recently started
-  pool.sort((a, b) => b.startedAt - a.startedAt);
-  const best = pool[0];
-
-  // If there are multiple candidates with the same cwd, warn that detection
-  // is ambiguous — the caller should handle this.
-  const ambiguous = pool.length > 1;
-  return { ...best, ambiguous };
+  return {
+    sessionId: best.sessionId,
+    cwd: best.cwd,
+    pid: best.pid,
+    source: best.ancestorMatch
+      ? 'process_ancestry'
+      : (best.ttyMatch ? 'tty' : 'same_cwd_recent_activity'),
+    ambiguous,
+  };
 }
 
 export function getCurrentSessionOrThrow() {

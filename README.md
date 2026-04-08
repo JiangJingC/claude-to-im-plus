@@ -264,7 +264,7 @@ In Claude Code:
 Detection order:
 
 - If `CODEX_THREAD_ID` exists, treat the current session as Codex
-- Otherwise treat it as the current Claude Code session (`CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`)
+- Otherwise treat it as the current Claude Code session (`CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → current-cwd Claude live sessions, preferring the most recently active same-cwd session)
 
 Current behavior and limits:
 
@@ -272,6 +272,7 @@ Current behavior and limits:
 - Explicit `<thread-id>` / `<session-id>` handoff is no longer supported
 - Public project/thread/session listing commands were removed
 - If exactly one binding exists for the target channel, it is selected automatically
+- Claude auto-detection stays within the current `cwd`; it does not fall back across projects
 - If no binding exists yet, send one message from the target chat first
 - If multiple bindings exist for the target channel, the command fails; this simplified flow does not auto-pick a target chat
 - Handoff auto-switches the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)

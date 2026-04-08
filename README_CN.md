@@ -264,7 +264,7 @@ claude-to-im handoff dingtalk
 自动识别顺序：
 
 - 如果存在 `CODEX_THREAD_ID`，按当前 Codex 会话处理
-- 否则按当前 Claude Code 会话处理（依次尝试 `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`）
+- 否则按当前 Claude Code 会话处理（依次尝试 `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → 当前 cwd 下的 Claude live sessions，并优先选择最近活跃的同目录会话）
 
 当前版本的行为边界：
 
@@ -272,6 +272,7 @@ claude-to-im handoff dingtalk
 - 不再支持显式传 `<thread-id>` 或 `<session-id>`
 - 不再提供列项目、列 thread、列 session 的公开命令
 - 目标渠道只有一个 binding 时会自动选中
+- Claude 自动识别只会在当前 `cwd` 内选会话；不会跨目录回退到别的项目
 - 如果还没有目标渠道 binding，先让目标聊天给 bot 发过至少一条消息
 - 如果存在多个目标渠道 binding，会直接报错；当前简化版不做自动选择
 - handoff 会自动把全局 `CTI_RUNTIME` 切到当前检测到的 runtime（`codex` 或 `claude`）

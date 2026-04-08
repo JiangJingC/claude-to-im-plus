@@ -100,6 +100,22 @@ describe('claude-handoff helper', () => {
     ]);
   }
 
+  function seedLiveClaudeSession(options: {
+    pid: number;
+    sessionId: string;
+    cwd: string;
+    startedAt: number;
+  }): void {
+    writeJson(path.join(claudeHome, 'sessions', `${options.pid}.json`), {
+      pid: options.pid,
+      sessionId: options.sessionId,
+      cwd: options.cwd,
+      startedAt: options.startedAt,
+      kind: 'interactive',
+      entrypoint: 'cli',
+    });
+  }
+
   function seedBindingData(bindings: Record<string, unknown>, sessions: Record<string, unknown> = {}): void {
     writeJson(path.join(ctiHome, 'data', 'bindings.json'), bindings);
     writeJson(path.join(ctiHome, 'data', 'sessions.json'), sessions);
@@ -163,6 +179,61 @@ describe('claude-handoff helper', () => {
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.sessionId, 'session-from-env');
     assert.equal(payload.source, 'env');
+  });
+
+  it('current: auto-picks the most recently active same-cwd live session', () => {
+    seedClaudeSession({
+      sessionId: 'session-older',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T10:00:00.000Z',
+      startTime: '2026-04-01T09:00:00.000Z',
+      firstPrompt: 'Older session',
+    });
+    seedClaudeSession({
+      sessionId: 'session-newer',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T12:00:00.000Z',
+      startTime: '2026-04-01T08:00:00.000Z',
+      firstPrompt: 'Newer session',
+    });
+    seedLiveClaudeSession({
+      pid: 11111,
+      sessionId: 'session-older',
+      cwd: REPO_ROOT,
+      startedAt: Date.parse('2026-04-01T09:00:00.000Z'),
+    });
+    seedLiveClaudeSession({
+      pid: 22222,
+      sessionId: 'session-newer',
+      cwd: REPO_ROOT,
+      startedAt: Date.parse('2026-04-01T08:00:00.000Z'),
+    });
+
+    const result = run(['current', '--json'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.sessionId, 'session-newer');
+    assert.equal(payload.source, 'same_cwd_recent_activity');
+  });
+
+  it('current: does not fall back to live sessions from other directories', () => {
+    seedLiveClaudeSession({
+      pid: 33333,
+      sessionId: 'other-project-session',
+      cwd: '/tmp/workspace/other-project',
+      startedAt: Date.parse('2026-04-01T09:00:00.000Z'),
+    });
+
+    const result = run(['current', '--json'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Cannot detect the current Claude Code session/);
   });
 
   it('runs main when executed through a symlink path', () => {
@@ -596,6 +667,59 @@ describe('claude-handoff helper', () => {
 
     const payload = JSON.parse(result.stdout);
     assert.equal(payload.sdkSessionId, 'cmux-detected-session');
+  });
+
+  it('bind: auto-picks the most recently active same-cwd live session', () => {
+    seedClaudeSession({
+      sessionId: 'session-older',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T10:00:00.000Z',
+      startTime: '2026-04-01T09:00:00.000Z',
+      firstPrompt: 'Older bind session',
+    });
+    seedClaudeSession({
+      sessionId: 'session-newer',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T12:00:00.000Z',
+      startTime: '2026-04-01T08:00:00.000Z',
+      firstPrompt: 'Newer bind session',
+    });
+    seedLiveClaudeSession({
+      pid: 44444,
+      sessionId: 'session-older',
+      cwd: REPO_ROOT,
+      startedAt: Date.parse('2026-04-01T09:00:00.000Z'),
+    });
+    seedLiveClaudeSession({
+      pid: 55555,
+      sessionId: 'session-newer',
+      cwd: REPO_ROOT,
+      startedAt: Date.parse('2026-04-01T08:00:00.000Z'),
+    });
+    seedBindingData({
+      'weixin:chat-a': {
+        id: 'binding-aaa111',
+        channelType: 'weixin',
+        chatId: 'chat-a',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-session',
+        workingDirectory: '/tmp/workspace',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+
+    const result = run(['bind', '--channel', 'weixin', '--json'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.sdkSessionId, 'session-newer');
   });
 
   it('bind: errors if multiple bindings and no prefix provided', () => {

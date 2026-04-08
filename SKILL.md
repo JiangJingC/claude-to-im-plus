@@ -181,7 +181,7 @@ Run:
 Behavior:
 
 - If `CODEX_THREAD_ID` exists, treat the current session as Codex and handoff to that thread
-- Otherwise detect the current Claude Code session using `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → `~/.claude/sessions/<PID>.json`
+- Otherwise detect the current Claude Code session using `CLAUDE_SESSION_ID` → `CMUX_CLAUDE_PID` → current-cwd Claude live sessions, preferring the most recently active same-cwd session
 - On success, auto-switch the global `CTI_RUNTIME` to the detected runtime (`codex` or `claude`)
 - If no binding exists yet for the target channel, tell the user to send at least one message from the target chat first
 - If multiple bindings exist for the target channel, do not guess; tell the user this simplified handoff only supports a single target chat per channel right now
