@@ -61,6 +61,47 @@ describe('handoff.sh', () => {
     return fs.readFileSync(configFile, 'utf8');
   }
 
+  function seedClaudeSession(options: {
+    sessionId: string;
+    cwd: string;
+    updatedAt: string;
+    startTime: string;
+    pid: number;
+  }): void {
+    const metaPath = path.join(claudeHome, 'usage-data', 'session-meta', `${options.sessionId}.json`);
+    writeJson(metaPath, {
+      session_id: options.sessionId,
+      project_path: options.cwd,
+      start_time: options.startTime,
+      first_prompt: '',
+    });
+
+    const encodedCwd = options.cwd.replace(/\//g, '-').replace(/^-/, '');
+    const jsonlPath = path.join(claudeHome, 'projects', encodedCwd, `${options.sessionId}.jsonl`);
+    writeJsonl(jsonlPath, [
+      {
+        type: 'user',
+        message: { role: 'user', content: 'handoff' },
+        uuid: 'msg-1',
+        timestamp: options.updatedAt,
+        sessionId: options.sessionId,
+        cwd: options.cwd,
+        permissionMode: 'default',
+        userType: 'external',
+        entrypoint: 'cli',
+      },
+    ]);
+
+    writeJson(path.join(claudeHome, 'sessions', `${options.pid}.json`), {
+      pid: options.pid,
+      sessionId: options.sessionId,
+      cwd: options.cwd,
+      startedAt: Date.parse(options.startTime),
+      kind: 'interactive',
+      entrypoint: 'cli',
+    });
+  }
+
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-handoff-wrapper-'));
     ctiHome = path.join(tmpRoot, 'cti-home');
@@ -284,6 +325,35 @@ esac
       fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
     );
     assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'pid-detected-session');
+    assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
+  });
+
+  it('auto-picks the most recently active same-cwd Claude session when no env hints are present', () => {
+    seedClaudeSession({
+      sessionId: 'session-older',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T10:00:00.000Z',
+      startTime: '2026-04-01T09:00:00.000Z',
+      pid: 51001,
+    });
+    seedClaudeSession({
+      sessionId: 'session-newer',
+      cwd: REPO_ROOT,
+      updatedAt: '2026-04-01T12:00:00.000Z',
+      startTime: '2026-04-01T08:00:00.000Z',
+      pid: 51002,
+    });
+
+    const result = run(['weixin'], {
+      CLAUDE_SESSION_ID: '',
+      CMUX_CLAUDE_PID: '',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['weixin:chat-a'].sdkSessionId, 'session-newer');
     assert.match(readConfig(), /^CTI_RUNTIME=claude$/m);
   });
 
