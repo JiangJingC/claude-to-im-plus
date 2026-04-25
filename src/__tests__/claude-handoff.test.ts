@@ -121,6 +121,10 @@ describe('claude-handoff helper', () => {
     writeJson(path.join(ctiHome, 'data', 'sessions.json'), sessions);
   }
 
+  function seedDingtalkChatData(records: Record<string, unknown>): void {
+    writeJson(path.join(ctiHome, 'data', 'dingtalk-webhooks.json'), records);
+  }
+
   beforeEach(() => {
     tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cti-claude-handoff-test-'));
     ctiHome = path.join(tmpRoot, 'cti-home');
@@ -388,6 +392,65 @@ describe('claude-handoff helper', () => {
     assert.match(result.stderr, /Multiple weixin bindings found/);
     assert.match(result.stderr, /binding-aaa111/);
     assert.match(result.stderr, /binding-bbb222/);
+  });
+
+  it('bindings: lists dingtalk bindings with chat metadata', () => {
+    seedBindingData({
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-group',
+        codepilotSessionId: 'old-a',
+        sdkSessionId: 'old-session-a',
+        workingDirectory: '/tmp/workspace/project-a',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+      'dingtalk:chat-b': {
+        id: 'binding-ddd222',
+        channelType: 'dingtalk',
+        chatId: 'cid-private',
+        codepilotSessionId: 'old-b',
+        sdkSessionId: 'old-session-b',
+        workingDirectory: '/tmp/workspace/project-b',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+    seedDingtalkChatData({
+      'cid-group': {
+        chatId: 'cid-group',
+        sessionWebhook: 'https://hook.example/group',
+        sessionWebhookExpiredTime: null,
+        conversationTitle: '研发群',
+        conversationType: '2',
+        updatedAt: '2026-04-02T00:00:00.000Z',
+      },
+      'cid-private': {
+        chatId: 'cid-private',
+        sessionWebhook: 'https://hook.example/private',
+        sessionWebhookExpiredTime: null,
+        senderNick: 'Alice',
+        conversationType: '1',
+        updatedAt: '2026-04-01T12:00:00.000Z',
+      },
+    });
+
+    const result = run(['bindings', '--channel', 'dingtalk', '--json']);
+    assert.equal(result.status, 0, result.stderr);
+
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.bindings.length, 2);
+    assert.equal(payload.bindings[0].summary.displayName, '研发群');
+    assert.equal(payload.bindings[0].summary.typeLabel, 'group');
+    assert.equal(payload.bindings[1].summary.displayName, 'Alice');
+    assert.equal(payload.bindings[1].summary.typeLabel, 'private');
   });
 
   it('bind: creates a new bridge session and updates the selected binding', () => {

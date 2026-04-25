@@ -66,6 +66,19 @@ function shouldSkipGitRepoCheck(): boolean {
   return process.env.CTI_CODEX_SKIP_GIT_REPO_CHECK !== 'false';
 }
 
+/** Prefer HTTPS streaming for background bridge runs; websocket transport can ignore local proxies. */
+export function resolveCodexConfigOverrides(): Record<string, unknown> | undefined {
+  if (process.env.CTI_CODEX_DISABLE_WEBSOCKETS === 'false') {
+    return undefined;
+  }
+  return {
+    features: {
+      responses_websockets: false,
+      responses_websockets_v2: false,
+    },
+  };
+}
+
 function resolveSandboxMode(): string | undefined {
   const raw = process.env.CTI_CODEX_SANDBOX_MODE?.trim();
   if (!raw) {
@@ -122,11 +135,13 @@ export class CodexProvider implements LLMProvider {
       || process.env.OPENAI_API_KEY
       || undefined;
     const baseUrl = process.env.CTI_CODEX_BASE_URL || undefined;
+    const config = resolveCodexConfigOverrides();
 
     const CodexClass = this.sdk.Codex;
     this.codex = new CodexClass({
       ...(apiKey ? { apiKey } : {}),
       ...(baseUrl ? { baseUrl } : {}),
+      ...(config ? { config } : {}),
     });
 
     return { sdk: this.sdk, codex: this.codex };

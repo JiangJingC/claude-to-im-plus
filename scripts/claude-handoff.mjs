@@ -31,6 +31,7 @@ const CLAUDE_HOME = process.env.CLAUDE_HOME || path.join(os.homedir(), '.claude'
 const DATA_DIR = path.join(CTI_HOME, 'data');
 const PROJECTS_PATH = path.join(CTI_HOME, 'projects.json');
 const BINDINGS_PATH = path.join(DATA_DIR, 'bindings.json');
+const DINGTALK_WEBHOOKS_PATH = path.join(DATA_DIR, 'dingtalk-webhooks.json');
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json');
 
 // Claude Code data paths
@@ -644,11 +645,66 @@ function readSessionsMap() {
   return readJsonFile(SESSIONS_PATH, {});
 }
 
-function selectBinding(channelType, bindingPrefix) {
+function readDingtalkChatMap() {
+  return readJsonFile(DINGTALK_WEBHOOKS_PATH, {});
+}
+
+function describeBinding(binding, metadata) {
+  const conversationType = String(metadata?.conversationType || '');
+  const conversationTitle = typeof metadata?.conversationTitle === 'string'
+    ? metadata.conversationTitle.trim()
+    : '';
+  const senderNick = typeof metadata?.senderNick === 'string'
+    ? metadata.senderNick.trim()
+    : '';
+  const updatedAt = safeTimestamp(metadata?.updatedAt || binding?.updatedAt || '');
+  const typeLabel = conversationType === '2'
+    ? 'group'
+    : (conversationType === '1' ? 'private' : 'unknown');
+  const displayName = conversationTitle
+    || (typeLabel === 'private' && senderNick ? senderNick : '')
+    || binding.chatId;
+
+  return {
+    bindingId: binding.id,
+    chatId: binding.chatId,
+    displayName,
+    typeLabel,
+    conversationTitle,
+    senderNick,
+    updatedAt,
+  };
+}
+
+export function listBindingsForChannel(channelType) {
   const bindingsMap = readBindingsMap();
-  const matches = Object.entries(bindingsMap)
+  const dingtalkChatMap = channelType === 'dingtalk' ? readDingtalkChatMap() : {};
+  return Object.entries(bindingsMap)
     .map(([key, value]) => ({ key, value }))
-    .filter(({ value }) => value?.channelType === channelType);
+    .filter(({ value }) => value?.channelType === channelType)
+    .map(({ key, value }) => ({
+      key,
+      value,
+      summary: describeBinding(value, dingtalkChatMap[value.chatId]),
+    }))
+    .sort((left, right) => {
+      const primary = compareDescByTimestamp(left.summary.updatedAt, right.summary.updatedAt);
+      if (primary !== 0) return primary;
+      return left.summary.bindingId.localeCompare(right.summary.bindingId);
+    });
+}
+
+function formatBindingDetails(matches) {
+  return matches
+    .map(({ summary }, index) => {
+      const updatedAt = summary.updatedAt || 'unknown';
+      return `- [${index + 1}] ${summary.bindingId} | ${summary.typeLabel} | ${summary.displayName} | ${summary.chatId} | ${updatedAt}`;
+    })
+    .join('\n');
+}
+
+function selectBinding(channelType, bindingPrefix) {
+  const matches = listBindingsForChannel(channelType);
 
   if (matches.length === 0) {
     throw new Error(
@@ -662,11 +718,9 @@ function selectBinding(channelType, bindingPrefix) {
   }
 
   if (!bindingPrefix) {
-    const details = matches
-      .map(({ value }) => `- ${value.id} | ${value.chatId}`)
-      .join('\n');
+    const details = formatBindingDetails(matches);
     throw new Error(
-      `Multiple ${channelType} bindings found. This simplified handoff only supports a single target ${channelType} chat right now.\n${details}`,
+      `Multiple ${channelType} bindings found. Re-run with --binding <binding-id-prefix>.\n${details}`,
     );
   }
 
@@ -675,9 +729,7 @@ function selectBinding(channelType, bindingPrefix) {
     throw new Error(`No ${channelType} binding matches prefix "${bindingPrefix}".`);
   }
   if (prefixMatches.length > 1) {
-    const details = prefixMatches
-      .map(({ value }) => `- ${value.id} | ${value.chatId}`)
-      .join('\n');
+    const details = formatBindingDetails(prefixMatches);
     throw new Error(
       `Binding prefix "${bindingPrefix}" is ambiguous. Please use a longer prefix.\n${details}`,
     );
@@ -822,6 +874,44 @@ function renderBinding(result) {
   ].join('\n');
 }
 
+function renderBindings(channelType, bindings) {
+  if (bindings.length === 0) {
+    return `No ${channelType} bindings found in ${BINDINGS_PATH}.`;
+  }
+
+  return [
+    `${channelType} bindings from ${BINDINGS_PATH}:`,
+    ...bindings.map(({ summary }, index) => {
+      const updatedAt = summary.updatedAt || 'unknown';
+      return `- [${index + 1}] ${summary.bindingId} | ${summary.typeLabel} | ${summary.displayName} | ${summary.chatId} | ${updatedAt}`;
+    }),
+  ].join('\n');
+}
+
+function parseBindingsOptions(args) {
+  const options = {
+    channel: '',
+  };
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    switch (arg) {
+      case '--channel':
+        options.channel = args[index + 1] || '';
+        index += 1;
+        break;
+      default:
+        throw new Error(`Unknown bindings option: ${arg}`);
+    }
+  }
+
+  if (!options.channel) {
+    throw new Error('bindings requires --channel <weixin|dingtalk>.');
+  }
+
+  return options;
+}
+
 function renderCurrentSession(current) {
   return [
     'Current Claude session:',
@@ -837,6 +927,7 @@ function usage() {
     '  node scripts/claude-handoff.mjs projects [--json]',
     '  node scripts/claude-handoff.mjs sessions <project-id> [limit] [--json]',
     '  node scripts/claude-handoff.mjs current [--json]',
+    '  node scripts/claude-handoff.mjs bindings --channel <weixin|dingtalk> [--json]',
     '  node scripts/claude-handoff.mjs bind --channel <weixin|dingtalk> [--session-id <id>] [--binding <prefix>] [--cwd <path>] [--model <name>] [--clear-model] [--json]',
   ].join('\n');
 }
@@ -934,6 +1025,17 @@ export async function main(argv = process.argv.slice(2)) {
         console.log(JSON.stringify(current, null, 2));
       } else {
         console.log(renderCurrentSession(current));
+      }
+      return;
+    }
+
+    case 'bindings': {
+      const options = parseBindingsOptions(parsed.args);
+      const bindings = listBindingsForChannel(options.channel);
+      if (parsed.json) {
+        console.log(JSON.stringify({ channelType: options.channel, bindings }, null, 2));
+      } else {
+        console.log(renderBindings(options.channel, bindings));
       }
       return;
     }

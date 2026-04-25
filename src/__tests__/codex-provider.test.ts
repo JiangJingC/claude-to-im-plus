@@ -47,6 +47,41 @@ function parseSSEChunks(chunks: string[]): Array<{ type: string; data: string }>
 }
 
 describe('CodexProvider', () => {
+  it('disables Codex response websockets by default for bridge subprocesses', async () => {
+    const old = process.env.CTI_CODEX_DISABLE_WEBSOCKETS;
+    delete process.env.CTI_CODEX_DISABLE_WEBSOCKETS;
+    try {
+      const { resolveCodexConfigOverrides } = await import('../codex-provider.js');
+      assert.deepEqual(resolveCodexConfigOverrides(), {
+        features: {
+          responses_websockets: false,
+          responses_websockets_v2: false,
+        },
+      });
+    } finally {
+      if (old === undefined) {
+        delete process.env.CTI_CODEX_DISABLE_WEBSOCKETS;
+      } else {
+        process.env.CTI_CODEX_DISABLE_WEBSOCKETS = old;
+      }
+    }
+  });
+
+  it('keeps Codex response websockets when CTI_CODEX_DISABLE_WEBSOCKETS=false', async () => {
+    const old = process.env.CTI_CODEX_DISABLE_WEBSOCKETS;
+    process.env.CTI_CODEX_DISABLE_WEBSOCKETS = 'false';
+    try {
+      const { resolveCodexConfigOverrides } = await import('../codex-provider.js');
+      assert.equal(resolveCodexConfigOverrides(), undefined);
+    } finally {
+      if (old === undefined) {
+        delete process.env.CTI_CODEX_DISABLE_WEBSOCKETS;
+      } else {
+        process.env.CTI_CODEX_DISABLE_WEBSOCKETS = old;
+      }
+    }
+  });
+
   it('emits error when SDK init fails', async () => {
     const { CodexProvider } = await import('../codex-provider.js');
     const { PendingPermissions } = await import('../permission-gateway.js');

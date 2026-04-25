@@ -4,8 +4,11 @@ import { CTI_HOME } from './config.js';
 
 export interface DingtalkWebhookRecord {
   chatId: string;
-  sessionWebhook: string;
+  sessionWebhook: string | null;
   sessionWebhookExpiredTime: number | null;
+  conversationTitle?: string;
+  conversationType?: string;
+  senderNick?: string;
   updatedAt: string;
 }
 
@@ -52,14 +55,21 @@ export function getDingtalkWebhook(chatId: string): DingtalkWebhookRecord | unde
 
 export function upsertDingtalkWebhook(params: {
   chatId: string;
-  sessionWebhook: string;
+  sessionWebhook?: string | null;
   sessionWebhookExpiredTime?: number | null;
+  conversationTitle?: string;
+  conversationType?: string;
+  senderNick?: string;
 }): DingtalkWebhookRecord {
   const records = readRecords();
+  const existing = records[params.chatId];
   const next: DingtalkWebhookRecord = {
     chatId: params.chatId,
-    sessionWebhook: params.sessionWebhook,
-    sessionWebhookExpiredTime: params.sessionWebhookExpiredTime ?? null,
+    sessionWebhook: params.sessionWebhook ?? existing?.sessionWebhook ?? null,
+    sessionWebhookExpiredTime: params.sessionWebhookExpiredTime ?? existing?.sessionWebhookExpiredTime ?? null,
+    conversationTitle: params.conversationTitle ?? existing?.conversationTitle,
+    conversationType: params.conversationType ?? existing?.conversationType,
+    senderNick: params.senderNick ?? existing?.senderNick,
     updatedAt: now(),
   };
   records[params.chatId] = next;

@@ -1,5 +1,6 @@
 import type {
   ChannelType,
+  FileAttachment,
   InboundMessage,
   OutboundMessage,
   SendResult,
@@ -12,12 +13,16 @@ import {
   isDingtalkWebhookExpired,
   upsertDingtalkWebhook,
 } from '../dingtalk-store.js';
+import {
+  DingtalkMediaDownloader,
+  type DingtalkImageDownloadRequest,
+} from './dingtalk/dingtalk-media.js';
 
 const DEDUP_TTL_MS = 5 * 60 * 1000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
-const UNSUPPORTED_MESSAGE_TEXT = '暂不支持图片、视频或文件，请发送文字消息。';
+const UNSUPPORTED_MESSAGE_TEXT = '暂不支持视频、语音或文件，请发送文字或图片消息。';
 
 type DingtalkConversationType = '1' | '2' | string;
 
@@ -39,17 +44,33 @@ interface DingtalkRichTextPart {
   content?: string;
   atName?: string;
   text?: string;
+  downloadCode?: string;
+  pictureDownloadCode?: string;
+  fileName?: string;
+}
+
+interface DingtalkMessageContent {
+  text?: string;
+  richText?: unknown;
+  downloadCode?: string;
+  pictureDownloadCode?: string;
+  fileName?: string;
+  recognition?: string;
 }
 
 interface DingtalkRobotMessage {
   msgId: string;
   conversationId: string;
   conversationType: DingtalkConversationType;
+  conversationTitle?: string;
   msgtype?: string;
+  chatbotCorpId?: string;
   senderNick?: string;
+  senderCorpId?: string;
   senderStaffId?: string;
   senderId?: string;
   chatbotUserId?: string;
+  robotCode?: string;
   isInAtList?: boolean;
   atUsers?: Array<{
     dingtalkId?: string;
@@ -67,16 +88,23 @@ interface DingtalkRobotMessage {
   richText?: {
     content?: unknown;
   };
-  content?: {
-    text?: string;
-    richText?: unknown;
-  };
+  content?: DingtalkMessageContent;
 }
 
 interface ExtractedText {
   text: string;
   unsupported: string[];
   hasMention: boolean;
+}
+
+interface DingtalkImageRef {
+  downloadCode: string;
+  filenameHint?: string;
+}
+
+interface CollectedImageRefs {
+  refs: DingtalkImageRef[];
+  missingCount: number;
 }
 
 interface DingtalkMessageSummary {
@@ -125,6 +153,7 @@ type DingtalkWebhookPayload = DingtalkTextWebhookPayload | DingtalkMarkdownWebho
 interface AdapterDeps {
   createClient?: (config: { appKey: string; appSecret: string }) => DingtalkClientLike;
   postToWebhook?: (sessionWebhook: string, payload: DingtalkWebhookPayload) => Promise<Response>;
+  downloadImageAttachment?: (request: DingtalkImageDownloadRequest) => Promise<FileAttachment>;
 }
 
 function createDefaultClient(config: { appKey: string; appSecret: string }): DingtalkClientLike {
@@ -179,8 +208,8 @@ function extractMessageText(msg: DingtalkRobotMessage): ExtractedText {
         parts.push(part.content || '[表情]');
       } else if (type === 'at') {
         hasMention = true;
-        parts.push(`@${part.content || part.atName || '某人'}`);
-      } else if (type === 'picture' || type === 'video' || type === 'file') {
+        parts.push(`@${part.content || part.atName || '某人'} `);
+      } else if (type === 'video' || type === 'file' || type === 'audio') {
         unsupported.push(type);
       } else if (part?.text) {
         parts.push(part.text);
@@ -192,6 +221,85 @@ function extractMessageText(msg: DingtalkRobotMessage): ExtractedText {
     text: parts.join('').trim(),
     unsupported,
     hasMention,
+  };
+}
+
+function collectImageRefs(msg: DingtalkRobotMessage): CollectedImageRefs {
+  const refs: DingtalkImageRef[] = [];
+  let missingCount = 0;
+
+  const pushRef = (downloadCode?: string, pictureDownloadCode?: string, filenameHint?: string) => {
+    const chosen = downloadCode || pictureDownloadCode;
+    if (typeof chosen === 'string' && chosen.trim()) {
+      refs.push({ downloadCode: chosen.trim(), filenameHint });
+      return;
+    }
+    missingCount += 1;
+  };
+
+  if (msg.msgtype === 'picture') {
+    pushRef(msg.content?.downloadCode, msg.content?.pictureDownloadCode, msg.content?.fileName);
+  }
+
+  const richText = msg?.richText?.content ?? msg?.content?.richText;
+  if (Array.isArray(richText)) {
+    for (const part of richText as DingtalkRichTextPart[]) {
+      const type = part?.msgType ?? part?.type;
+      if (type === 'picture') {
+        pushRef(part.downloadCode, part.pictureDownloadCode, part.fileName);
+      }
+    }
+  }
+
+  return { refs, missingCount };
+}
+
+function collectUnsupportedTypes(msg: DingtalkRobotMessage, existing: string[]): string[] {
+  const unsupported = [...existing];
+  if (msg.msgtype === 'video' || msg.msgtype === 'file' || msg.msgtype === 'audio') {
+    unsupported.push(msg.msgtype);
+  }
+  return Array.from(new Set(unsupported));
+}
+
+function buildImageDownloadRequests(
+  msg: DingtalkRobotMessage,
+  refs: DingtalkImageRef[],
+): { requests: DingtalkImageDownloadRequest[]; error?: string } {
+  const { store } = getBridgeContext();
+  const appKey = store.getSetting('bridge_dingtalk_app_key');
+  const appSecret = store.getSetting('bridge_dingtalk_app_secret');
+  const corpId = msg.chatbotCorpId || msg.senderCorpId;
+  const robotCode = msg.robotCode;
+
+  if (!appKey || !appSecret) {
+    return {
+      requests: [],
+      error: 'DingTalk image download is not configured. Set CTI_DINGTALK_APP_KEY and CTI_DINGTALK_APP_SECRET.',
+    };
+  }
+  if (!corpId) {
+    return {
+      requests: [],
+      error: 'DingTalk did not include corpId for this image message. Please send the image again.',
+    };
+  }
+  if (!robotCode) {
+    return {
+      requests: [],
+      error: 'DingTalk did not include robotCode for this image message. Please send the image again.',
+    };
+  }
+
+  return {
+    requests: refs.map((ref) => ({
+      appKey,
+      appSecret,
+      corpId,
+      robotCode,
+      downloadCode: ref.downloadCode,
+      filenameHint: ref.filenameHint,
+    })),
   };
 }
 
@@ -246,7 +354,7 @@ function sanitizePayloadForLog(value: unknown): JsonLike {
   if (typeof value === 'object') {
     const out: Record<string, JsonLike> = {};
     for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-      if (key === 'sessionWebhook') {
+      if (key === 'sessionWebhook' || key === 'downloadCode' || key === 'pictureDownloadCode') {
         out[key] = raw ? '[redacted]' : null;
         continue;
       }
@@ -363,9 +471,11 @@ export class DingtalkAdapter extends BaseChannelAdapter {
   private seenMessageIds = new Map<string, number>();
   private readonly createClientImpl: NonNullable<AdapterDeps['createClient']>;
   private readonly postToWebhookImpl: NonNullable<AdapterDeps['postToWebhook']>;
+  private readonly downloadImageAttachmentImpl: NonNullable<AdapterDeps['downloadImageAttachment']>;
 
   constructor(deps: AdapterDeps = {}) {
     super();
+    const mediaDownloader = new DingtalkMediaDownloader();
     this.createClientImpl = deps.createClient ?? createDefaultClient;
     this.postToWebhookImpl = deps.postToWebhook ?? ((sessionWebhook, payload) =>
       fetch(sessionWebhook, {
@@ -373,6 +483,8 @@ export class DingtalkAdapter extends BaseChannelAdapter {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       }));
+    this.downloadImageAttachmentImpl = deps.downloadImageAttachment ?? ((request) =>
+      mediaDownloader.downloadImageAttachment(request));
   }
 
   async start(): Promise<void> {
@@ -436,7 +548,7 @@ export class DingtalkAdapter extends BaseChannelAdapter {
 
   async send(message: OutboundMessage): Promise<SendResult> {
     const webhook = getDingtalkWebhook(message.address.chatId);
-    if (!webhook) {
+    if (!webhook?.sessionWebhook) {
       return { ok: false, error: `No DingTalk sessionWebhook cached for chat ${message.address.chatId}` };
     }
     if (isDingtalkWebhookExpired(webhook)) {
@@ -483,15 +595,18 @@ export class DingtalkAdapter extends BaseChannelAdapter {
       return;
     }
 
-    if (msg.sessionWebhook) {
-      upsertDingtalkWebhook({
-        chatId: msg.conversationId,
-        sessionWebhook: msg.sessionWebhook,
-        sessionWebhookExpiredTime: msg.sessionWebhookExpiredTime ?? null,
-      });
-    }
+    upsertDingtalkWebhook({
+      chatId: msg.conversationId,
+      sessionWebhook: msg.sessionWebhook ?? undefined,
+      sessionWebhookExpiredTime: msg.sessionWebhookExpiredTime ?? undefined,
+      conversationTitle: msg.conversationTitle,
+      conversationType: String(msg.conversationType),
+      senderNick: msg.senderNick,
+    });
 
     const extracted = extractMessageText(msg);
+    const unsupported = collectUnsupportedTypes(msg, extracted.unsupported);
+    const imageRefs = collectImageRefs(msg);
     const isGroup = isGroupConversation(msg.conversationType);
     const isPrivate = isPrivateConversation(msg.conversationType);
     const replyToBot = isReplyToBot(msg);
@@ -502,7 +617,9 @@ export class DingtalkAdapter extends BaseChannelAdapter {
         isGroup,
         isPrivate,
         extractedText: previewText(extracted.text),
-        unsupported: extracted.unsupported,
+        imageRefs: imageRefs.refs.length,
+        missingImageRefs: imageRefs.missingCount,
+        unsupported,
         hasMention: extracted.hasMention,
         isReplyToBot: replyToBot,
       }),
@@ -519,13 +636,72 @@ export class DingtalkAdapter extends BaseChannelAdapter {
       return;
     }
 
-    const text = isGroup ? stripLeadingMentions(extracted.text) : extracted.text.trim();
-    if (!text) {
-      if (msg.sessionWebhook && extracted.unsupported.length > 0) {
+    let text = isGroup ? stripLeadingMentions(extracted.text) : extracted.text.trim();
+    const attachments: FileAttachment[] = [];
+    let failedCount = imageRefs.missingCount;
+    let userVisibleError: string | undefined;
+
+    if (imageRefs.missingCount > 0) {
+      userVisibleError = 'DingTalk did not include a downloadable image token for this message. Please send the image again.';
+    }
+
+    if (imageRefs.refs.length > 0) {
+      const { requests, error } = buildImageDownloadRequests(msg, imageRefs.refs);
+      if (error) {
+        failedCount += imageRefs.refs.length;
+        userVisibleError = error;
+      } else {
+        for (const request of requests) {
+          try {
+            const attachment = await this.downloadImageAttachmentImpl(request);
+            attachments.push(attachment);
+          } catch (err) {
+            failedCount++;
+            userVisibleError ||= 'Failed to download the DingTalk image attachment. Please send it again.';
+            console.warn(
+              `[dingtalk-adapter] Failed to download image for ${msg.msgId}:`,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      }
+    }
+
+    if (failedCount > 0) {
+      const failureNote = `[${failedCount} attachment(s) failed to download]`;
+      text = text.trim() ? `${text}\n${failureNote}` : (attachments.length > 0 ? failureNote : text);
+    }
+
+    if (!text && attachments.length === 0) {
+      if (msg.sessionWebhook && unsupported.length > 0) {
         console.log(
-          `[dingtalk-adapter] Replying with unsupported-message fallback for ${msg.msgId}: ${extracted.unsupported.join(',')}`,
+          `[dingtalk-adapter] Replying with unsupported-message fallback for ${msg.msgId}: ${unsupported.join(',')}`,
         );
         await this.postToWebhookImpl(msg.sessionWebhook, buildTextWebhookPayload(UNSUPPORTED_MESSAGE_TEXT)).catch(() => {});
+      } else if (attachments.length === 0 && failedCount > 0) {
+        this.enqueue({
+          messageId: msg.msgId,
+          address: {
+            channelType: 'dingtalk',
+            chatId: msg.conversationId,
+            userId: msg.senderStaffId || msg.senderId,
+            displayName: msg.senderNick,
+          },
+          text: '',
+          timestamp: msg.createAt || Date.now(),
+          raw: userVisibleError
+            ? {
+                originalMessage: msg,
+                userVisibleError,
+              }
+            : {
+                originalMessage: msg,
+                attachmentDownloadFailed: true,
+                failedCount,
+                failedLabel: 'attachment(s)',
+              },
+        });
+        return;
       }
       console.log(`[dingtalk-adapter] Ignoring empty text after extraction for ${msg.msgId}`);
       return;
@@ -541,7 +717,15 @@ export class DingtalkAdapter extends BaseChannelAdapter {
       },
       text,
       timestamp: msg.createAt || Date.now(),
-      raw: msg,
+      raw: failedCount > 0 && attachments.length === 0 && !text.trim()
+        ? {
+            originalMessage: msg,
+            attachmentDownloadFailed: true,
+            failedCount,
+            failedLabel: 'attachment(s)',
+          }
+        : msg,
+      attachments: attachments.length > 0 ? attachments : undefined,
     };
     console.log(
       '[dingtalk-adapter] Enqueue inbound message:',
@@ -550,6 +734,8 @@ export class DingtalkAdapter extends BaseChannelAdapter {
         chatId: inbound.address.chatId,
         userId: inbound.address.userId,
         text: previewText(inbound.text),
+        attachments: attachments.length,
+        failedCount,
         isGroup,
         isPrivate,
       }),

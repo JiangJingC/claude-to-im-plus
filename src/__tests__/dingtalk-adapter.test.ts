@@ -6,7 +6,7 @@ import type { BridgeStore } from 'claude-to-im/src/lib/bridge/host.js';
 import { initBridgeContext } from 'claude-to-im/src/lib/bridge/context.js';
 import { CTI_HOME } from '../config.js';
 import { DingtalkAdapter } from '../adapters/dingtalk-adapter.js';
-import { getDingtalkWebhooksFilePath } from '../dingtalk-store.js';
+import { getDingtalkWebhook, getDingtalkWebhooksFilePath } from '../dingtalk-store.js';
 
 function createMockStore(settings: Record<string, string> = {}) {
   return {
@@ -79,6 +79,10 @@ describe('dingtalk-adapter', () => {
     assert.equal(inbound?.address.chatId, 'conv-private');
     assert.equal(inbound?.address.userId, 'staff-1');
     assert.equal(inbound?.text, '你好');
+
+    const record = getDingtalkWebhook('conv-private');
+    assert.equal(record?.senderNick, 'Alice');
+    assert.equal(record?.conversationType, '1');
   });
 
   it('ignores group text without @ mention or reply-to-bot', async () => {
@@ -100,6 +104,7 @@ describe('dingtalk-adapter', () => {
       msgId: 'msg-group-at',
       conversationId: 'conv-group',
       conversationType: '2',
+      conversationTitle: '研发群',
       text: { content: '@机器人 帮我检查一下' },
       sessionWebhook: 'https://hook.example/group',
     });
@@ -107,6 +112,10 @@ describe('dingtalk-adapter', () => {
     const inbound = await adapter.consumeOne();
     assert.ok(inbound);
     assert.equal(inbound?.text, '帮我检查一下');
+
+    const record = getDingtalkWebhook('conv-group');
+    assert.equal(record?.conversationTitle, '研发群');
+    assert.equal(record?.conversationType, '2');
   });
 
   it('accepts group messages when DingTalk marks the bot in atUsers/isInAtList even if text omits the @ prefix', async () => {
@@ -149,7 +158,122 @@ describe('dingtalk-adapter', () => {
     assert.equal(inbound?.text, '继续这个问题');
   });
 
-  it('replies with a fixed fallback for unsupported media-only messages', async () => {
+  it('accepts private picture messages and forwards image attachments', async () => {
+    const requests: Array<{ downloadCode: string; robotCode: string; corpId: string }> = [];
+    const adapter = new DingtalkAdapter({
+      downloadImageAttachment: async (request) => {
+        requests.push({
+          downloadCode: request.downloadCode,
+          robotCode: request.robotCode,
+          corpId: request.corpId,
+        });
+        return {
+          id: 'img-1',
+          name: 'test.png',
+          type: 'image/png',
+          size: 4,
+          data: 'cG5n',
+        };
+      },
+    });
+
+    await adapter.processMessage({
+      msgId: 'msg-picture-private',
+      msgtype: 'picture',
+      conversationId: 'conv-private-picture',
+      conversationType: '1',
+      chatbotCorpId: 'ding-corp-1',
+      robotCode: 'ding-robot-1',
+      senderStaffId: 'staff-1',
+      senderNick: 'Alice',
+      content: {
+        pictureDownloadCode: 'picture-code-1',
+      },
+      sessionWebhook: 'https://hook.example/private',
+    });
+
+    const inbound = await adapter.consumeOne();
+    assert.ok(inbound);
+    assert.equal(inbound?.text, '');
+    assert.equal(inbound?.attachments?.length, 1);
+    assert.equal(inbound?.attachments?.[0]?.type, 'image/png');
+    assert.deepEqual(requests, [{
+      downloadCode: 'picture-code-1',
+      robotCode: 'ding-robot-1',
+      corpId: 'ding-corp-1',
+    }]);
+  });
+
+  it('accepts group richText with text and picture attachments', async () => {
+    const requests: Array<{ downloadCode: string }> = [];
+    const adapter = new DingtalkAdapter({
+      downloadImageAttachment: async (request) => {
+        requests.push({ downloadCode: request.downloadCode });
+        return {
+          id: 'img-2',
+          name: 'diagram.jpg',
+          type: 'image/jpeg',
+          size: 8,
+          data: 'aW1hZ2U=',
+        };
+      },
+    });
+
+    await adapter.processMessage({
+      msgId: 'msg-picture-group',
+      msgtype: 'richText',
+      conversationId: 'conv-group-picture',
+      conversationType: '2',
+      chatbotCorpId: 'ding-corp-1',
+      robotCode: 'ding-robot-1',
+      richText: {
+        content: [
+          { msgType: 'at', content: '机器人' },
+          { msgType: 'text', content: '看下这张图' },
+          { msgType: 'picture', pictureDownloadCode: 'picture-code-2', downloadCode: 'download-code-2' },
+        ],
+      },
+      sessionWebhook: 'https://hook.example/group',
+    } as any);
+
+    const inbound = await adapter.consumeOne();
+    assert.ok(inbound);
+    assert.equal(inbound?.text, '看下这张图');
+    assert.equal(inbound?.attachments?.length, 1);
+    assert.equal(inbound?.attachments?.[0]?.name, 'diagram.jpg');
+    assert.deepEqual(requests, [{ downloadCode: 'download-code-2' }]);
+  });
+
+  it('surfaces a clear inbound error when image download fails', async () => {
+    const adapter = new DingtalkAdapter({
+      downloadImageAttachment: async () => {
+        throw new Error('download failed');
+      },
+    });
+
+    await adapter.processMessage({
+      msgId: 'msg-picture-failed',
+      msgtype: 'picture',
+      conversationId: 'conv-private-picture',
+      conversationType: '1',
+      chatbotCorpId: 'ding-corp-1',
+      robotCode: 'ding-robot-1',
+      content: {
+        pictureDownloadCode: 'picture-code-3',
+      },
+      sessionWebhook: 'https://hook.example/private',
+    });
+
+    const inbound = await adapter.consumeOne();
+    assert.ok(inbound);
+    assert.equal(inbound?.text, '');
+    assert.equal(
+      (inbound?.raw as { userVisibleError?: string } | undefined)?.userVisibleError,
+      'Failed to download the DingTalk image attachment. Please send it again.',
+    );
+  });
+
+  it('replies with a fixed fallback for unsupported non-image media-only messages', async () => {
     const webhookCalls: Array<{ sessionWebhook: string; payload: unknown }> = [];
     const adapter = new DingtalkAdapter({
       postToWebhook: async (sessionWebhook, payload) => {
@@ -163,7 +287,7 @@ describe('dingtalk-adapter', () => {
       conversationId: 'conv-group',
       conversationType: '1',
       richText: {
-        content: [{ msgType: 'picture' }],
+        content: [{ msgType: 'video' }],
       },
       sessionWebhook: 'https://hook.example/group',
     } as any);
@@ -172,7 +296,7 @@ describe('dingtalk-adapter', () => {
       sessionWebhook: 'https://hook.example/group',
       payload: {
         msgtype: 'text',
-        text: { content: '暂不支持图片、视频或文件，请发送文字消息。' },
+        text: { content: '暂不支持视频、语音或文件，请发送文字或图片消息。' },
       },
     }]);
   });

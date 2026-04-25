@@ -84,7 +84,7 @@ Ask which channels to enable (telegram, discord, feishu, qq, weixin, dingtalk). 
 - **feishu** (Lark) — For Feishu/Lark teams. Streaming cards, tool progress, inline permission buttons.
 - **qq** — QQ C2C private chat only. No inline permission buttons, no streaming preview. Permissions use text `/perm ...` commands.
 - **weixin** — WeChat QR login. Single linked account only; a new login replaces the previous one. No inline permission buttons, no streaming preview. Permissions use text `/perm ...` commands or quick `1/2/3` replies. Voice messages only use WeChat's own speech-to-text text; raw voice audio is not transcribed by the bridge.
-- **dingtalk** — DingTalk Stream mode. Supports private chats and group chats; v1 only handles `@bot` or reply-to-bot messages in groups. Plain text replies only.
+- **dingtalk** — DingTalk Stream mode. Supports private chats and group chats; v1 only handles `@bot` or reply-to-bot messages in groups. Plain text replies only, but inbound images can be forwarded to Claude/Codex.
 
 **Step 2 — Collect tokens per channel**
 
@@ -117,7 +117,7 @@ For each enabled channel, collect one credential at a time. Tell the user where 
   1. Ask for DingTalk **App Key**
   2. Ask for DingTalk **App Secret**
   3. Tell the user to enable **Bot** + **Stream mode** on the DingTalk internal app
-  4. Explain briefly: group chats only process `@bot` or reply-to-bot messages, and v1 replies are plain text only
+  4. Explain briefly: group chats only process `@bot` or reply-to-bot messages, v1 replies are plain text only, and inbound images can be forwarded to Claude/Codex
 
 **Step 3 — General settings**
 
@@ -189,6 +189,8 @@ Behavior:
 - After writing the binding, handoff always starts the bridge so the new target chat is immediately usable
 - Restarting the bridge drops pending permission requests
 - Handoff affects future messages for that channel only; it does not migrate a reply that is already streaming
+- In Codex runtime, bridge subprocesses disable Codex response websockets by default for proxy reliability. Set `CTI_CODEX_DISABLE_WEBSOCKETS=false` only if you need Codex's default websocket transport.
+- For proxy environments, tell users to put `export HTTPS_PROXY=...`, `export HTTP_PROXY=...`, `export ALL_PROXY=...`, and optional `export NO_PROXY=...` directly in `~/.claude-to-im/config.env`. The bridge forwards uppercase and lowercase proxy variables to the daemon and Claude/Codex subprocesses; do not rely on interactive shell startup files like `~/.zshrc` for background daemons.
 
 Removed commands:
 

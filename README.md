@@ -44,6 +44,10 @@ If your IM-bridged Codex sessions must keep full filesystem write access after h
 
 Codex handoff also skips Codex's trusted-directory Git repo check by default so switching between projects works without pre-trusting every folder. Set `CTI_CODEX_SKIP_GIT_REPO_CHECK=false` if you want to restore Codex's stricter trusted-directory behavior.
 
+Codex bridge subprocesses disable Codex response websockets by default and use HTTPS streaming instead. This is more reliable for background daemons behind local proxies. Set `CTI_CODEX_DISABLE_WEBSOCKETS=false` only if you explicitly want Codex's websocket transport.
+
+If Claude/Codex needs a proxy, put standard proxy variables directly in `~/.claude-to-im/config.env`, for example `export HTTPS_PROXY=http://127.0.0.1:7897` and `export ALL_PROXY=socks5://127.0.0.1:7897`. Do not rely on `~/.zshrc` or `~/.bashrc` for the background bridge; macOS LaunchAgent and Linux detached daemons inherit the variables from `config.env`.
+
 ## Installation
 
 Choose the section that matches the AI agent product you actually use.
@@ -302,6 +306,8 @@ Runtime-specific config notes:
 - `CTI_AUTO_APPROVE=true` auto-allows bridge tool permission requests, but it is still not the same as inheriting `--dangerously-skip-permissions`
 - `CTI_CODEX_SANDBOX_MODE` only affects Codex runtime
 - `CTI_CODEX_SKIP_GIT_REPO_CHECK` defaults to skip Codex's trusted-directory repo check; set it to `false` if you want Codex to require trusted repos again
+- `CTI_CODEX_DISABLE_WEBSOCKETS` defaults to disabling Codex response websockets for bridge subprocesses; set it to `false` to restore Codex's default transport
+- `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and their lowercase variants can be exported from `config.env`; they are forwarded to the bridge daemon and Claude/Codex subprocesses
 - If `CTI_RUNTIME=claude`, leave `CTI_DEFAULT_MODEL` unset or use a Claude model; Codex/OpenAI model names are ignored
 
 **Practical impact:** If your original session had `bypassPermissions` or a custom `allowedTools` list, the bridge session will NOT. It will use the bridge's standard permission model (including the IM `/perm` approval flow). Do not assume "fully inherits desktop permissions".
@@ -364,7 +370,7 @@ Additional notes:
 
 ### DingTalk
 
-> DingTalk currently uses Stream mode, supports private chats and group chats, and replies with plain text only in v1. Group chats only process `@bot` messages or replies to the bot.
+> DingTalk currently uses Stream mode, supports private chats and group chats, and replies with plain text only in v1. Group chats only process `@bot` messages or replies to the bot. Inbound images can be forwarded to Claude/Codex.
 
 1. Create a DingTalk internal app with **Bot** + **Stream mode** enabled
 2. Get the app's **AppKey** and **AppSecret**
@@ -375,7 +381,8 @@ Additional notes:
 Notes:
 - The bridge uses the official `dingtalk-stream` SDK
 - Replies are sent through DingTalk's per-chat `sessionWebhook`, which is cached under `~/.claude-to-im/data/`
-- v1 does not implement cards, buttons, image/file ingestion, or streaming preview
+- Inbound images are downloaded through DingTalk's `downloadCode` / `pictureDownloadCode` API and forwarded to Claude/Codex
+- v1 does not implement cards, buttons, file/video ingestion, or streaming preview
 - Permission approvals use text `/perm ...` commands or quick `1/2/3` replies
 
 ## Architecture

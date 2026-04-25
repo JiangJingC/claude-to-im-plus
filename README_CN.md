@@ -44,6 +44,10 @@ Claude Code / Codex → 读写你的代码库
 
 另外，Codex handoff 现在默认会跳过 Codex 的 trusted-directory Git repo 检查，这样你在不同项目目录之间切换时不需要先逐个 trust。只有当你明确想恢复 Codex 原生的严格保护时，才需要设置 `CTI_CODEX_SKIP_GIT_REPO_CHECK=false`。
 
+Codex bridge 子进程默认会禁用 Codex response websockets，改走 HTTPS streaming。这个方式对后台 daemon 和本地代理环境更稳定。只有当你明确想恢复 Codex 默认 websocket 传输时，才需要设置 `CTI_CODEX_DISABLE_WEBSOCKETS=false`。
+
+如果 Claude/Codex 需要走代理，请把标准代理变量直接写进 `~/.claude-to-im/config.env`，例如 `export HTTPS_PROXY=http://127.0.0.1:7897` 和 `export ALL_PROXY=socks5://127.0.0.1:7897`。不要依赖 `~/.zshrc` 或 `~/.bashrc`；后台 bridge 会从 `config.env` 继承这些变量，并继续传给 Claude/Codex 子进程。
+
 ## 安装
 
 请先按你实际使用的 AI Agent 产品选择对应安装方式。
@@ -299,6 +303,8 @@ claude-to-im handoff dingtalk
 - `CTI_AUTO_APPROVE=true` 表示桥接自动放行工具请求，但它仍然不等于继承 `--dangerously-skip-permissions`
 - `CTI_CODEX_SANDBOX_MODE` 只对 Codex runtime 生效
 - `CTI_CODEX_SKIP_GIT_REPO_CHECK` 默认会跳过 Codex 的 trusted-directory repo 检查；只有设成 `false` 才会恢复严格模式
+- `CTI_CODEX_DISABLE_WEBSOCKETS` 默认会为 bridge 子进程禁用 Codex response websockets；设成 `false` 才恢复 Codex 默认传输
+- `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 及其小写形式可以从 `config.env` 中 `export`；bridge daemon 和 Claude/Codex 子进程都会继承
 - 如果 `CTI_RUNTIME=claude`，建议把 `CTI_DEFAULT_MODEL` 留空，或改成 Claude 模型名；Codex/OpenAI 模型名会被忽略
 
 **请勿对用户暗示”已完全继承桌面端权限”。**
@@ -362,7 +368,7 @@ claude-to-im handoff dingtalk
 
 ### DingTalk / 钉钉
 
-> 钉钉 v1 使用 Stream 模式，支持私聊和群聊，但回复只做纯文本。群聊里只有 `@机器人` 或回复机器人的消息才会进入 bridge。
+> 钉钉 v1 使用 Stream 模式，支持私聊和群聊，但回复只做纯文本。群聊里只有 `@机器人` 或回复机器人的消息才会进入 bridge。入站图片会转发给 Claude/Codex。
 
 1. 创建钉钉企业内部应用，并启用 **机器人** + **Stream 模式**
 2. 获取应用的 **AppKey** 和 **AppSecret**
@@ -374,7 +380,8 @@ claude-to-im handoff dingtalk
 
 - bridge 使用官方 `dingtalk-stream` SDK
 - 回复通过钉钉每个会话携带的 `sessionWebhook` 发送，并缓存到 `~/.claude-to-im/data/`
-- v1 不包含卡片、按钮、图片/文件入站和流式预览
+- 入站图片通过钉钉 `downloadCode` / `pictureDownloadCode` 接口下载后转发给 Claude/Codex
+- v1 不包含卡片、按钮、文件/视频入站和流式预览
 
 ## 架构
 

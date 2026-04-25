@@ -19,7 +19,7 @@
     "tsx": "^4.21.0"
   },
   "optionalDependencies": {
-    "@openai/codex-sdk": "^0.110.0"
+    "@openai/codex-sdk": "^0.125.0"
   },
   "devDependencies": {
     "@types/node": "^22",

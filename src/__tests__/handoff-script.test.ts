@@ -32,10 +32,11 @@ describe('handoff.sh', () => {
   let fakeDaemon: string;
   let configFile: string;
 
-  function run(args: string[], extraEnv: Record<string, string> = {}) {
+  function run(args: string[], extraEnv: Record<string, string> = {}, input?: string) {
     return spawnSync('bash', [HANDOFF_SH, ...args], {
       cwd: REPO_ROOT,
       encoding: 'utf8',
+      input,
       env: {
         ...process.env,
         CODEX_THREAD_ID: '',
@@ -55,6 +56,10 @@ describe('handoff.sh', () => {
   function writeConfig(contents: string): void {
     fs.mkdirSync(path.dirname(configFile), { recursive: true });
     fs.writeFileSync(configFile, contents, 'utf8');
+  }
+
+  function seedDingtalkChatData(records: Record<string, unknown>): void {
+    writeJson(path.join(ctiHome, 'data', 'dingtalk-webhooks.json'), records);
   }
 
   function readConfig(): string {
@@ -246,6 +251,130 @@ esac
     );
     assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'thread-1');
     assert.match(readConfig(), /^CTI_RUNTIME=codex$/m);
+  });
+
+  it('prompts for dingtalk binding selection when multiple chats are available', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-group',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-thread-id',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+      'dingtalk:chat-b': {
+        id: 'binding-ddd222',
+        channelType: 'dingtalk',
+        chatId: 'cid-private',
+        codepilotSessionId: 'other-session-id',
+        sdkSessionId: 'other-thread-id',
+        workingDirectory: '/tmp/workspace/project-y',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+    seedDingtalkChatData({
+      'cid-group': {
+        chatId: 'cid-group',
+        sessionWebhook: 'https://hook.example/group',
+        sessionWebhookExpiredTime: null,
+        conversationTitle: '研发群',
+        conversationType: '2',
+        updatedAt: '2026-04-02T00:00:00.000Z',
+      },
+      'cid-private': {
+        chatId: 'cid-private',
+        sessionWebhook: 'https://hook.example/private',
+        sessionWebhookExpiredTime: null,
+        senderNick: 'Alice',
+        conversationType: '1',
+        updatedAt: '2026-04-01T12:00:00.000Z',
+      },
+    });
+
+    const result = run(['dingtalk'], {
+      CODEX_THREAD_ID: 'thread-1',
+    }, '2\n');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Select the target chat/);
+    assert.match(result.stderr, /研发群/);
+    assert.match(result.stderr, /Alice/);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'old-thread-id');
+    assert.equal(bindings['dingtalk:chat-b'].sdkSessionId, 'thread-1');
+  });
+
+  it('retries dingtalk binding selection after invalid input', () => {
+    writeJson(path.join(ctiHome, 'data', 'bindings.json'), {
+      'dingtalk:chat-a': {
+        id: 'binding-ddd111',
+        channelType: 'dingtalk',
+        chatId: 'cid-group',
+        codepilotSessionId: 'old-session-id',
+        sdkSessionId: 'old-thread-id',
+        workingDirectory: '/tmp/workspace/project-z',
+        model: 'gpt-5.4',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+      'dingtalk:chat-b': {
+        id: 'binding-ddd222',
+        channelType: 'dingtalk',
+        chatId: 'cid-private',
+        codepilotSessionId: 'other-session-id',
+        sdkSessionId: 'other-thread-id',
+        workingDirectory: '/tmp/workspace/project-y',
+        model: '',
+        mode: 'code',
+        active: true,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-01T00:00:00.000Z',
+      },
+    });
+    seedDingtalkChatData({
+      'cid-group': {
+        chatId: 'cid-group',
+        sessionWebhook: 'https://hook.example/group',
+        sessionWebhookExpiredTime: null,
+        conversationTitle: '研发群',
+        conversationType: '2',
+        updatedAt: '2026-04-02T00:00:00.000Z',
+      },
+      'cid-private': {
+        chatId: 'cid-private',
+        sessionWebhook: 'https://hook.example/private',
+        sessionWebhookExpiredTime: null,
+        senderNick: 'Alice',
+        conversationType: '1',
+        updatedAt: '2026-04-01T12:00:00.000Z',
+      },
+    });
+
+    const result = run(['dingtalk'], {
+      CODEX_THREAD_ID: 'thread-1',
+    }, '9\nbinding-ddd111\n');
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /Selection 9 is out of range/);
+
+    const bindings = JSON.parse(
+      fs.readFileSync(path.join(ctiHome, 'data', 'bindings.json'), 'utf8'),
+    );
+    assert.equal(bindings['dingtalk:chat-a'].sdkSessionId, 'thread-1');
+    assert.equal(bindings['dingtalk:chat-b'].sdkSessionId, 'other-thread-id');
   });
 
   it('starts the bridge even if it was not already running', () => {

@@ -10,23 +10,46 @@ PLIST_FILE="$PLIST_DIR/$LAUNCHD_LABEL.plist"
 
 # Collect env vars that should be forwarded into the plist.
 # We honour clean_env() logic by reading *after* clean_env runs.
+plist_escape() {
+  local value="$1"
+  value="${value//&/&amp;}"
+  value="${value//</&lt;}"
+  value="${value//>/&gt;}"
+  value="${value//\"/&quot;}"
+  echo "$value"
+}
+
 build_env_dict() {
   local indent="            "
   local dict=""
 
+  append_env_var() {
+    local var="$1"
+    local val="${!var:-}"
+    [ -z "$val" ] && return 0
+    val="$(plist_escape "$val")"
+    dict+="${indent}<key>${var}</key>\n${indent}<string>${val}</string>\n"
+  }
+
   # Always forward basics
   for var in HOME PATH USER SHELL LANG TMPDIR; do
-    local val="${!var:-}"
-    [ -z "$val" ] && continue
-    dict+="${indent}<key>${var}</key>\n${indent}<string>${val}</string>\n"
+    append_env_var "$var"
   done
 
   # Forward CTI_* vars
   while IFS='=' read -r name val; do
     case "$name" in CTI_*)
+      val="$(plist_escape "$val")"
       dict+="${indent}<key>${name}</key>\n${indent}<string>${val}</string>\n"
       ;; esac
   done < <(env)
+
+  # Forward common proxy vars. Users often define these in config.env with
+  # `export`; launchd only passes them to the daemon if we write them into
+  # the LaunchAgent plist explicitly.
+  for var in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy; do
+    append_env_var "$var"
+  done
 
   # Forward runtime-specific API keys
   local runtime
@@ -36,9 +59,7 @@ build_env_dict() {
   case "$runtime" in
     codex|auto)
       for var in OPENAI_API_KEY CODEX_API_KEY CTI_CODEX_API_KEY CTI_CODEX_BASE_URL; do
-        local val="${!var:-}"
-        [ -z "$val" ] && continue
-        dict+="${indent}<key>${var}</key>\n${indent}<string>${val}</string>\n"
+        append_env_var "$var"
       done
       ;;
   esac
@@ -48,6 +69,7 @@ build_env_dict() {
       # Third-party API providers need these to reach the CLI subprocess.
       while IFS='=' read -r name val; do
         case "$name" in ANTHROPIC_*)
+          val="$(plist_escape "$val")"
           dict+="${indent}<key>${name}</key>\n${indent}<string>${val}</string>\n"
           ;; esac
       done < <(env)

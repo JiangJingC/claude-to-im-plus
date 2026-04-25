@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.tgz
+.codepilot-uploads/
 .env
 config.env
 .DS_Store

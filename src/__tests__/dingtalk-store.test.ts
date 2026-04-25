@@ -24,12 +24,18 @@ describe('dingtalk-store', () => {
       chatId: 'conv-1',
       sessionWebhook: 'https://hook.example/1',
       sessionWebhookExpiredTime: 12345,
+      conversationTitle: '研发群',
+      conversationType: '2',
+      senderNick: 'Alice',
     });
 
     const record = getDingtalkWebhook('conv-1');
     assert.equal(record?.chatId, 'conv-1');
     assert.equal(record?.sessionWebhook, 'https://hook.example/1');
     assert.equal(record?.sessionWebhookExpiredTime, 12345);
+    assert.equal(record?.conversationTitle, '研发群');
+    assert.equal(record?.conversationType, '2');
+    assert.equal(record?.senderNick, 'Alice');
   });
 
   it('updates existing webhook records', () => {
@@ -47,6 +53,27 @@ describe('dingtalk-store', () => {
     const record = getDingtalkWebhook('conv-1');
     assert.equal(record?.sessionWebhook, 'https://hook.example/new');
     assert.equal(record?.sessionWebhookExpiredTime, 200);
+  });
+
+  it('merges chat metadata without clearing an existing webhook', () => {
+    upsertDingtalkWebhook({
+      chatId: 'conv-1',
+      sessionWebhook: 'https://hook.example/old',
+      sessionWebhookExpiredTime: 100,
+    });
+    upsertDingtalkWebhook({
+      chatId: 'conv-1',
+      conversationTitle: '产品讨论群',
+      conversationType: '2',
+      senderNick: 'Bob',
+    });
+
+    const record = getDingtalkWebhook('conv-1');
+    assert.equal(record?.sessionWebhook, 'https://hook.example/old');
+    assert.equal(record?.sessionWebhookExpiredTime, 100);
+    assert.equal(record?.conversationTitle, '产品讨论群');
+    assert.equal(record?.conversationType, '2');
+    assert.equal(record?.senderNick, 'Bob');
   });
 
   it('detects expiry from sessionWebhookExpiredTime', () => {

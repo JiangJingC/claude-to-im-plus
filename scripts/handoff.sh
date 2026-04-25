@@ -185,6 +185,100 @@ detect_current_runtime() {
   return 1
 }
 
+select_binding_for_channel() {
+  local helper="$1"
+  local channel="$2"
+  local bindings_json
+  local count
+  local selection
+  local resolved
+
+  bindings_json="$(node "$helper" bindings --channel "$channel" --json 2>&1)" || {
+    printf '%s\n' "$bindings_json" >&2
+    return 1
+  }
+
+  count="$(printf '%s' "$bindings_json" | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => raw += chunk);
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const bindings = Array.isArray(payload.bindings) ? payload.bindings : [];
+  process.stdout.write(String(bindings.length));
+});
+')"
+
+  if [ "$count" -le 1 ]; then
+    return 0
+  fi
+
+  printf 'Multiple %s bindings found. Select the target chat:\n' "$channel" >&2
+  printf '%s' "$bindings_json" | node -e '
+let raw = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => raw += chunk);
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const bindings = Array.isArray(payload.bindings) ? payload.bindings : [];
+  for (const [index, entry] of bindings.entries()) {
+    const summary = entry?.summary || {};
+    const updatedAt = summary.updatedAt || "unknown";
+    process.stderr.write(`[${index + 1}] ${summary.bindingId} | ${summary.typeLabel} | ${summary.displayName} | ${summary.chatId} | ${updatedAt}\n`);
+  }
+});
+'
+
+  while true; do
+    printf 'Enter the number or binding id prefix: ' >&2
+    if ! IFS= read -r selection; then
+      echo "No selection received. Re-run 'handoff $channel' and choose one of the listed bindings." >&2
+      return 1
+    fi
+
+    resolved="$(printf '%s' "$bindings_json" | node -e '
+let raw = "";
+const selection = (process.argv[1] || "").trim();
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => raw += chunk);
+process.stdin.on("end", () => {
+  const payload = JSON.parse(raw);
+  const bindings = Array.isArray(payload.bindings) ? payload.bindings : [];
+  if (!selection) {
+    process.stderr.write("Selection cannot be empty.\n");
+    process.exit(1);
+  }
+
+  if (/^\d+$/.test(selection)) {
+    const index = Number.parseInt(selection, 10) - 1;
+    if (index >= 0 && index < bindings.length) {
+      process.stdout.write(bindings[index].value.id);
+      return;
+    }
+    process.stderr.write(`Selection ${selection} is out of range.\n`);
+    process.exit(1);
+  }
+
+  const matches = bindings.filter((entry) => entry?.value?.id?.startsWith(selection));
+  if (matches.length === 1) {
+    process.stdout.write(matches[0].value.id);
+    return;
+  }
+  if (matches.length > 1) {
+    process.stderr.write(`Binding prefix "${selection}" is ambiguous. Use a longer prefix or enter the numeric index.\n`);
+    process.exit(1);
+  }
+
+  process.stderr.write(`No binding matches "${selection}".\n`);
+  process.exit(1);
+});
+' "$selection")" && {
+      printf '%s\n' "$resolved"
+      return 0
+    }
+  done
+}
+
 case "${1:-help}" in
   weixin|dingtalk)
     channel="$1"
@@ -195,12 +289,27 @@ case "${1:-help}" in
     fi
 
     runtime="$(detect_current_runtime)" || exit 1
+    helper="$HELPER"
+    if [ "$runtime" = "claude" ]; then
+      helper="$CLAUDE_HELPER"
+    fi
+
+    binding_prefix=""
+    if [ "$channel" = "dingtalk" ]; then
+      binding_prefix="$(select_binding_for_channel "$helper" "$channel")" || exit 1
+    fi
+
+    bind_args=(--channel "$channel")
+    if [ -n "$binding_prefix" ]; then
+      bind_args+=(--binding "$binding_prefix")
+    fi
+
     case "$runtime" in
       codex)
-        run_handoff_with_restart codex "Codex handoff ($channel)" node "$HELPER" bind --channel "$channel"
+        run_handoff_with_restart codex "Codex handoff ($channel)" node "$HELPER" bind "${bind_args[@]}"
         ;;
       claude)
-        run_handoff_with_restart claude "Claude handoff ($channel)" node "$CLAUDE_HELPER" bind --channel "$channel"
+        run_handoff_with_restart claude "Claude handoff ($channel)" node "$CLAUDE_HELPER" bind "${bind_args[@]}"
         ;;
       *)
         echo "Unsupported detected runtime: $runtime" >&2
